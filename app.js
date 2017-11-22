@@ -5,27 +5,16 @@ const Influx = require('influx');
 const influx = new Influx.InfluxDB({
 	host: 'localhost',
 	database: 'kobold'
-	// schema: [
-	// {
-	// 	measurement: 'response_times',
-	// 	fields: {
-	// 		path: Influx.FieldType.STRING,
-	// 		duration: Influx.FieldType.INTEGER
-	// 	},
-	// 	tags: [
-	// 	'host'
-	// 	]
-	// }
-	// ]
-})
+});
+
+app.set('view engine', 'ejs')
 
 app.get('/', function(req, res) {
-	influx.query('SELECT * FROM temperature').then(result => {
-			// res.json(result)
-			res.send(result)
-		}).catch(err => {
-			res.status(500).send(err.stack)
-		})
-	});
+	influx.query('SELECT * FROM readings').then(result => {
+		res.render('index.ejs');
+	}).catch(err => {
+		res.status(500).send(err.stack);
+	})
+});
 
 app.listen(3000);
