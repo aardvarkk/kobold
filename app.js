@@ -10,8 +10,11 @@ const influx = new Influx.InfluxDB({
 app.set('view engine', 'ejs')
 
 app.get('/', function(req, res) {
+	debugger;
 	influx.query('SELECT * FROM readings').then(result => {
-		res.render('index.ejs');
+		res.render('index.ejs', {
+			data: result
+		});
 	}).catch(err => {
 		res.status(500).send(err.stack);
 	})
