@@ -1,0 +1,11 @@
+{
+	"version": "0.1.0",
+	"dependencies": {
+		"ejs": "latest",
+		"express": "^4.16.2",
+		"influx": "latest"
+	},
+	"scripts": {
+		"start": "node app.js"
+	}
+}

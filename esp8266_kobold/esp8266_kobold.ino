@@ -2,7 +2,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 
-#define ONE_WIRE_BUS 2
+#define ONE_WIRE_BUS 14
 
 ADC_MODE(ADC_VCC);
 
