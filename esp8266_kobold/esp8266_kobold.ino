@@ -3,6 +3,7 @@
 #include <ESP8266HTTPClient.h>
 
 #define ONE_WIRE_BUS 14
+#define PIN_RELAY 12
 
 ADC_MODE(ADC_VCC);
 
@@ -57,7 +58,13 @@ void setup() {
     int code = http.POST(payload);
     Serial.println(code);
   }
+
+  pinMode(PIN_RELAY, OUTPUT);
 }
 
 void loop() {
+  delay(500);
+  digitalWrite(PIN_RELAY, LOW);
+  delay(500);
+  digitalWrite(PIN_RELAY, HIGH);
 }
