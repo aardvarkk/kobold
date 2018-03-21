@@ -4,6 +4,10 @@
 		"ejs": "latest",
 		"express": "^4.16.2",
 		"influx": "latest",
-		"npm": "^5.7.1"
+		"npm": "^5.7.1",
+		"passport": "^0.4.0",
+		"passport-local": "^1.0.0",
+		"pg": "^7.4.1",
+		"sequelize": "^4.37.3"
 	}
 }
