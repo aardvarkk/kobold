@@ -3,11 +3,28 @@ var app = express()
 var bodyParser = require('body-parser')
 var passport = require('passport')
 var LocalStrategy = require('passport-local').Strategy
+var bcrypt = require('bcrypt')
 
 const Sequelize = require('sequelize');
 const sequelize = new Sequelize('kobold', 'aardvarkk', null, {
   dialect: 'postgres'
 });
+
+sequelize
+  .authenticate()
+  .then(() => {
+    console.log('Connection has been established successfully.');
+  })
+  .catch(err => {
+    console.error('Unable to connect to the database:', err);
+  })
+
+const User = sequelize.define('user', {
+  email: { type: Sequelize.TEXT, allowNull: false, primaryKey: true },
+  password: { type: Sequelize.TEXT, allowNull: false }
+}, {
+	timestamps: false
+})
 
 const Influx = require('influx')
 const influx = new Influx.InfluxDB({
@@ -19,17 +36,18 @@ app.set('view engine', 'ejs')
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded())
 
-passport.use(new LocalStrategy(
-  function(username, password, done) {
-    User.findOne({ username: username }, function (err, user) {
-      if (err) { return done(err) }
-      if (!user) {
-        return done(null, false, { message: 'Incorrect username.' })
-      }
-      if (!user.validPassword(password)) {
-        return done(null, false, { message: 'Incorrect password.' })
-      }
-      return done(null, user)
+passport.use(new LocalStrategy({ usernameField: 'email' },
+  function(email, password, done) {
+    User.findOne({ where: { email: email }}).then(user => {
+	  	done(user.email)
+      // if (err) { return done(err) }
+      // if (!user) {
+      //   return done(null, false, { message: 'Incorrect email.' })
+      // }
+      // if (!user.validPassword(password)) {
+      //   return done(null, false, { message: 'Incorrect password.' })
+      // }
+      // return done(null, user)
     })
   }
 ))

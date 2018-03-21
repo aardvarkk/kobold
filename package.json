@@ -1,6 +1,7 @@
 {
 	"version": "0.1.0",
 	"dependencies": {
+		"bcrypt": "^1.0.3",
 		"ejs": "latest",
 		"express": "^4.16.2",
 		"influx": "latest",
