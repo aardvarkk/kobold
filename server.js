@@ -23,67 +23,78 @@ const User = sequelize.define('user', {
   email: { type: Sequelize.TEXT, allowNull: false, primaryKey: true },
   password: { type: Sequelize.TEXT, allowNull: false }
 }, {
-	timestamps: false
+  timestamps: false
 })
 
 const Influx = require('influx')
 const influx = new Influx.InfluxDB({
-	host: 'localhost',
-	database: 'kobold'
+  host: 'localhost',
+  database: 'kobold'
 })
 
 app.set('view engine', 'ejs')
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded())
+app.use(passport.initialize());
+app.use(passport.session());
 
 passport.use(new LocalStrategy({ usernameField: 'email' },
   function(email, password, done) {
     User.findOne({ where: { email: email }}).then(user => {
-	  	done(user.email)
-      // if (err) { return done(err) }
-      // if (!user) {
-      //   return done(null, false, { message: 'Incorrect email.' })
-      // }
-      // if (!user.validPassword(password)) {
-      //   return done(null, false, { message: 'Incorrect password.' })
-      // }
-      // return done(null, user)
+      if (!user) return done(null, false)
+      bcrypt.compare(password, user.password, function(err, res) {
+        if (!res) return done(null, false)
+        return done(null, user)
+      });
+      // bcrypt.hash('password', 10, function(err, hash) {
+      //   console.log(hash)
+      // });
     })
   }
 ))
 
+passport.serializeUser(function(user, done) {
+  done(null, user.email);
+});
+
+passport.deserializeUser(function(email, done) {
+  User.findOne({ where: { email: email } }).then(user => {
+    done(!user, user);
+  });
+});
+
 app.get('/login', function(req, res) {
-	res.render('login.ejs')
+  res.render('login.ejs')
 })
 
 app.post('/login', passport.authenticate('local'), function(req, res) {
-  res.redirect('/users/' + req.user.username)
+  res.redirect('/')
 })
 
 app.get('/', function(req, res) {
-	influx.query('SELECT * FROM readings').then(result => {
-		res.render('index.ejs', {
-			data: result
-		})
-	}).catch(err => {
-		res.status(500).send(err.stack)
-	})
+  influx.query('SELECT * FROM readings').then(result => {
+    res.render('index.ejs', {
+      data: result
+    })
+  }).catch(err => {
+    res.status(500).send(err.stack)
+  })
 })
 
 app.post('/', function(req, res) {
-	console.log(req.body)
+  console.log(req.body)
 
-	influx.writePoints([
-	{
-		measurement: 'readings',
-		tags: { sensor: req.body.sensor },
-		fields: {
-			temperature: req.body.temperature,
-			voltage:     req.body.voltage
-		}
-	}])
+  influx.writePoints([
+  {
+    measurement: 'readings',
+    tags: { sensor: req.body.sensor },
+    fields: {
+      temperature: req.body.temperature,
+      voltage:     req.body.voltage
+    }
+  }])
 
-	res.status(200).send()
+  res.status(200).send()
 })
 
 app.listen(3000)
