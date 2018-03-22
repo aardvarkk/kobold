@@ -4,6 +4,7 @@ var bodyParser = require('body-parser')
 var passport = require('passport')
 var LocalStrategy = require('passport-local').Strategy
 var bcrypt = require('bcrypt')
+var moment = require('moment')
 
 const Sequelize = require('sequelize');
 const sequelize = new Sequelize('kobold', 'aardvarkk', null, {
@@ -37,11 +38,18 @@ const Node = sequelize.define('node', {
   timestamps: false
 })
 
-const Influx = require('influx')
-const influx = new Influx.InfluxDB({
-  host: 'localhost',
-  database: 'kobold'
+const Reading = sequelize.define('reading', {
+  id: { type: Sequelize.BIGINT, primaryKey: true },
+  temp: { type: Sequelize.REAL }
+}, {
+  timestamps: false
 })
+
+User.hasMany(Node, { as: 'Nodes', foreignKey: 'user_id' })
+Node.belongsTo(User, { foreignKey: 'user_id' })
+
+Node.hasMany(Reading, { as: 'Readings', foreignKey: 'node_id' })
+Reading.belongsTo(Node, { foreignKey: 'node_id' })
 
 app.set('view engine', 'ejs')
 app.use(bodyParser.json())
@@ -84,39 +92,59 @@ app.post('/login', passport.authenticate('local'), function(req, res) {
 })
 
 app.get('/nodes', function(req, res) {
+  var readings = {}
   Node.findAll({ where: { user_id: 1 }})
   .then(result => {
     nodes = result
   })
   .then(() => {
+    // TODO: Use actual user ID
+    return sequelize.query(`
+      SELECT DISTINCT ON (node_id) node_id, temp, ts
+      FROM nodes
+      JOIN readings ON readings.node_id = nodes.id
+      WHERE user_id = 1
+      ORDER BY node_id, ts DESC
+    `, { type: sequelize.QueryTypes.SELECT })
+  })
+  .then(results => {
+    results.forEach(function(result) {
+      readings[result.node_id] = result
+    })
+    console.log(readings)
+  })
+  .then(() => {
+    console.log(readings)
     res.render('nodes.ejs', {
-      nodes: nodes
+      moment: moment,
+      nodes: nodes,
+      readings: readings
     })
   })
 })
 
 app.get('/', function(req, res) {
-  influx.query('SELECT * FROM readings').then(result => {
-    res.render('index.ejs', {
-      data: result
-    })
-  }).catch(err => {
-    res.status(500).send(err.stack)
-  })
+  // influx.query('SELECT * FROM readings').then(result => {
+  //   res.render('index.ejs', {
+  //     data: result
+  //   })
+  // }).catch(err => {
+  //   res.status(500).send(err.stack)
+  // })
 })
 
 app.post('/', function(req, res) {
   console.log(req.body)
 
-  influx.writePoints([
-  {
-    measurement: 'readings',
-    tags: { sensor: req.body.sensor },
-    fields: {
-      temperature: req.body.temperature,
-      voltage:     req.body.voltage
-    }
-  }])
+  // influx.writePoints([
+  // {
+  //   measurement: 'readings',
+  //   tags: { sensor: req.body.sensor },
+  //   fields: {
+  //     temperature: req.body.temperature,
+  //     voltage:     req.body.voltage
+  //   }
+  // }])
 
   res.status(200).send()
 })

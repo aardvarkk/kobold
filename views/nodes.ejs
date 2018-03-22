@@ -1,4 +1,4 @@
 <h1>Nodes</h1>
 <% nodes.forEach(function(node) { %>
-	<%= node.name %>
+	<%= node.name %> was <%= readings[node.id].temp %>°C <%= moment(readings[node.id].ts).fromNow() %>
 <% }) %>
