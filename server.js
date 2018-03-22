@@ -19,9 +19,20 @@ sequelize
     console.error('Unable to connect to the database:', err);
   })
 
+// MODELS
 const User = sequelize.define('user', {
-  email: { type: Sequelize.TEXT, allowNull: false, primaryKey: true },
+  id: { type: Sequelize.BIGINT, primaryKey: true },
+  email: { type: Sequelize.TEXT, allowNull: false },
   password: { type: Sequelize.TEXT, allowNull: false }
+}, {
+  timestamps: false
+})
+
+const Node = sequelize.define('node', {
+  id: { type: Sequelize.BIGINT, primaryKey: true },
+  name: { type: Sequelize.TEXT, allowNull: false },
+  chip_id: { type: Sequelize.BIGINT, allowNull: false },
+  mac_addr: { type: Sequelize.TEXT, allowNull: false }
 }, {
   timestamps: false
 })
@@ -64,11 +75,24 @@ passport.deserializeUser(function(email, done) {
 });
 
 app.get('/login', function(req, res) {
+  console.log(req.user)
   res.render('login.ejs')
 })
 
 app.post('/login', passport.authenticate('local'), function(req, res) {
   res.redirect('/')
+})
+
+app.get('/nodes', function(req, res) {
+  Node.findAll({ where: { user_id: 1 }})
+  .then(result => {
+    nodes = result
+  })
+  .then(() => {
+    res.render('nodes.ejs', {
+      nodes: nodes
+    })
+  })
 })
 
 app.get('/', function(req, res) {
