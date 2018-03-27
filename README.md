@@ -21,6 +21,8 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=kobold" -
 exit
 ```
 
+`pg_dump -s kobold > schema.psql`
+
 Sonoff Setup
 
 - macOS High Sierra (10.13.2)

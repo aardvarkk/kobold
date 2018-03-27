@@ -38,9 +38,18 @@ const Node = sequelize.define('node', {
   timestamps: false
 })
 
+const Override = sequelize.define('override', {
+  id: { type: Sequelize.BIGINT, primaryKey: true },
+  temp: { type: Sequelize.REAL, allowNull: false },
+  ts: { type: Sequelize.DATE }
+}, {
+  timestamps: false
+})
+
 const Reading = sequelize.define('reading', {
   id: { type: Sequelize.BIGINT, primaryKey: true },
-  temp: { type: Sequelize.REAL }
+  temp: { type: Sequelize.REAL },
+  ts: { type: Sequelize.DATE }
 }, {
   timestamps: false
 })
@@ -50,6 +59,9 @@ Node.belongsTo(User, { foreignKey: 'user_id' })
 
 Node.hasMany(Reading, { as: 'Readings', foreignKey: 'node_id' })
 Reading.belongsTo(Node, { foreignKey: 'node_id' })
+
+Node.hasOne(Override, { as: 'Override', foreignKey: 'override_id' })
+Override.belongsTo(Node, { foreignKey: 'node_id' })
 
 app.set('view engine', 'ejs')
 app.use(bodyParser.json())
@@ -92,7 +104,7 @@ app.post('/login', passport.authenticate('local'), function(req, res) {
 })
 
 app.get('/nodes', function(req, res) {
-  var readings = {}
+  var nodeVals = {}
   Node.findAll({ where: { user_id: 1 }})
   .then(result => {
     nodes = result
@@ -100,25 +112,32 @@ app.get('/nodes', function(req, res) {
   .then(() => {
     // TODO: Use actual user ID
     return sequelize.query(`
-      SELECT DISTINCT ON (node_id) node_id, temp, ts
+      SELECT DISTINCT ON (nodes.id)
+      nodes.id,
+      readings.temp AS reading_temp,
+      readings.ts AS reading_ts,
+      overrides.temp AS override_temp,
+      overrides.ts AS override_ts
       FROM nodes
       JOIN readings ON readings.node_id = nodes.id
+      LEFT JOIN overrides ON overrides.node_id = nodes.id
       WHERE user_id = 1
-      ORDER BY node_id, ts DESC
+      ORDER BY nodes.id, readings.ts DESC
     `, { type: sequelize.QueryTypes.SELECT })
   })
   .then(results => {
+    // console.log(results)
     results.forEach(function(result) {
-      readings[result.node_id] = result
+      nodeVals[result.id] = result
     })
-    console.log(readings)
   })
   .then(() => {
-    console.log(readings)
+    // console.log(nodes)
+    // console.log(nodeVals)
     res.render('nodes.ejs', {
       moment: moment,
       nodes: nodes,
-      readings: readings
+      nodeVals: nodeVals
     })
   })
 })

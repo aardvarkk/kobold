@@ -43,7 +43,8 @@ CREATE TABLE nodes (
     name text NOT NULL,
     chip_id bigint NOT NULL,
     mac_addr text NOT NULL,
-    user_id bigint NOT NULL
+    user_id bigint NOT NULL,
+    override_id bigint
 );
 
 
@@ -71,6 +72,41 @@ ALTER SEQUENCE nodes_id_seq OWNED BY nodes.id;
 
 
 --
+-- Name: overrides; Type: TABLE; Schema: public; Owner: aardvarkk
+--
+
+CREATE TABLE overrides (
+    id bigint NOT NULL,
+    temp real NOT NULL,
+    ts timestamp with time zone DEFAULT now() NOT NULL,
+    node_id bigint NOT NULL
+);
+
+
+ALTER TABLE overrides OWNER TO aardvarkk;
+
+--
+-- Name: overrides_id_seq; Type: SEQUENCE; Schema: public; Owner: aardvarkk
+--
+
+CREATE SEQUENCE overrides_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE overrides_id_seq OWNER TO aardvarkk;
+
+--
+-- Name: overrides_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: aardvarkk
+--
+
+ALTER SEQUENCE overrides_id_seq OWNED BY overrides.id;
+
+
+--
 -- Name: readings; Type: TABLE; Schema: public; Owner: aardvarkk
 --
 
@@ -78,7 +114,7 @@ CREATE TABLE readings (
     id bigint NOT NULL,
     node_id bigint NOT NULL,
     temp real,
-    ts timestamp without time zone DEFAULT now() NOT NULL
+    ts timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -147,6 +183,13 @@ ALTER TABLE ONLY nodes ALTER COLUMN id SET DEFAULT nextval('nodes_id_seq'::regcl
 
 
 --
+-- Name: overrides id; Type: DEFAULT; Schema: public; Owner: aardvarkk
+--
+
+ALTER TABLE ONLY overrides ALTER COLUMN id SET DEFAULT nextval('overrides_id_seq'::regclass);
+
+
+--
 -- Name: readings id; Type: DEFAULT; Schema: public; Owner: aardvarkk
 --
 
@@ -166,6 +209,14 @@ ALTER TABLE ONLY users ALTER COLUMN id SET DEFAULT nextval('users_id_seq'::regcl
 
 ALTER TABLE ONLY nodes
     ADD CONSTRAINT nodes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: overrides overrides_pkey; Type: CONSTRAINT; Schema: public; Owner: aardvarkk
+--
+
+ALTER TABLE ONLY overrides
+    ADD CONSTRAINT overrides_pkey PRIMARY KEY (id);
 
 
 --
@@ -193,11 +244,27 @@ ALTER TABLE ONLY users
 
 
 --
+-- Name: nodes nodes_override_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: aardvarkk
+--
+
+ALTER TABLE ONLY nodes
+    ADD CONSTRAINT nodes_override_id_fkey FOREIGN KEY (override_id) REFERENCES overrides(id);
+
+
+--
 -- Name: nodes nodes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: aardvarkk
 --
 
 ALTER TABLE ONLY nodes
     ADD CONSTRAINT nodes_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id);
+
+
+--
+-- Name: overrides overrides_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: aardvarkk
+--
+
+ALTER TABLE ONLY overrides
+    ADD CONSTRAINT overrides_node_id_fkey FOREIGN KEY (node_id) REFERENCES nodes(id);
 
 
 --

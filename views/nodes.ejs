@@ -1,4 +1,8 @@
 <h1>Nodes</h1>
 <% nodes.forEach(function(node) { %>
-	<%= node.name %> was <%= readings[node.id].temp %>°C <%= moment(readings[node.id].ts).fromNow() %>
+	<p>
+	<%= node.name %> was <%= nodeVals[node.id].reading_temp %>°C <%= moment(nodeVals[node.id].reading_ts).fromNow() %><br/>
+	<% if (!nodeVals[node.id].override_temp || !nodeVals[node.id].override_ts) return %>
+	Override is <%= nodeVals[node.id].override_temp %>°C set <%= moment(nodeVals[node.id].override_ts).fromNow() %>
+	</p>
 <% }) %>
