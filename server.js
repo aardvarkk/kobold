@@ -32,7 +32,6 @@ const User = sequelize.define('user', {
 const Node = sequelize.define('node', {
   id: { type: Sequelize.BIGINT, primaryKey: true },
   name: { type: Sequelize.TEXT, allowNull: false },
-  chip_id: { type: Sequelize.BIGINT, allowNull: false },
   mac_addr: { type: Sequelize.TEXT, allowNull: false }
 }, {
   timestamps: false
@@ -107,6 +106,7 @@ app.get('/nodes', function(req, res) {
   var nodeVals = {}
   Node.findAll({ where: { user_id: 1 }})
   .then(result => {
+    // console.log(result)
     nodes = result
   })
   .then(() => {

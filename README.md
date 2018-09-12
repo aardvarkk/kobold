@@ -1,3 +1,7 @@
+ESP8266 SDK
+
+/Users/aardvarkk/Library/Arduino15/packages/esp8266/hardware/esp8266/2.4.1/libraries/ESP8266WiFi/src/
+
 https://www.letscontrolit.com/wiki/index.php/Basics:_Connecting_and_flashing_the_ESP8266
 http://esp32.net/usb-uart/
 
