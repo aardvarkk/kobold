@@ -1,8 +1,15 @@
+// DEFINES
+#define REQUIRESALARMS false
+
 #include <assert.h>
+#include <DallasTemperature.h>
 #include <EEPROM.h>
+#include <ESP8266WiFi.h>
 
 // CONSTANTS
 const uint8_t PIN_RELAY = 12;
+const uint8_t PIN_LED = 13;
+const uint8_t PIN_ONE_WIRE = 14;
 const long    SERIAL_SPEED = 115200;
 const SerialConfig SERIAL_CONFIG = SERIAL_8N1;
 const size_t  MAGIC_SIZE = 4;
@@ -12,9 +19,16 @@ const size_t  SSID_MAX = 32;
 const size_t  PASSPHRASE_MAX = 64;
 const size_t  EEPROM_SIZE = 512;
 const float   DEFAULT_TEMP = 18.0;
+const uint8_t SENSOR_ADC_BITS = 12;
+const char*   AP_SSID = "abcd";
+const char*   AP_PASSPHRASE = "thereisnospoon";
+const int     YIELD_DELAY_MS = 20;
 
+const unsigned long PERIOD_BLINK_OFF = 800000;
+const unsigned long PERIOD_BLINK_ON  = 100000;
 const unsigned long PERIOD_CHECK_TEMP = 5e6; // 5e6 = 5 seconds
 //const unsigned long PERIOD_CHECK_TEMP = 3e8; // 3e8 = 5 minutes
+const unsigned long PERIOD_RETRY_ONLINE = 6e7; // 6e7 = 1 minute
 
 // TYPES
 enum class RunMode {
@@ -31,12 +45,25 @@ struct Storage {
 };
 
 // GLOBAL VARIABLES
-RunMode _mode;
-Storage _storage;
-unsigned long _last_checked_temp = -PERIOD_CHECK_TEMP;
+RunMode           _mode;
+Storage           _storage;
+unsigned long     _last_checked_temp  = -PERIOD_CHECK_TEMP;
+unsigned long     _last_changed_blink = -PERIOD_BLINK_OFF;
+unsigned long     _latest_user_action = -PERIOD_RETRY_ONLINE;
+unsigned long     _conversion_period;
+unsigned long     _last_started_temp_req;
+bool              _started_temp_req;
+bool              _blink_state;
+OneWire           _one_wire_bus(PIN_ONE_WIRE);
+DallasTemperature _sensor_interface(&_one_wire_bus);
+DeviceAddress     _sensor_address;
 
 #define log(x) {     \
   Serial.println(x); \
+}
+
+void yield_delay() {
+  delay(YIELD_DELAY_MS);
 }
 
 bool internet_settings_exist(Storage const& storage) {
@@ -51,30 +78,30 @@ void init_storage() {
 
 // Read/write a single uint8_t value
 void serialize_uint8_t(uint8_t& val, int& address, bool write) {
-//  log("serialize_uint8_t");
-//  log(address);
+  //  log("serialize_uint8_t");
+  //  log(address);
   assert(sizeof(val) == sizeof(uint8_t));
   if (write) {
-//    log(val);
+    //    log(val);
     EEPROM.write(val, address);
   } else {
     val = EEPROM.read(address);
-//    log(val);
+    //    log(val);
   }
   address += sizeof(val);
 }
 
 // Read/write a single char value
 void serialize_char(char& val, int& address, bool write) {
-//  log("serialize_char");
-//  log(address);
+  //  log("serialize_char");
+  //  log(address);
   assert(sizeof(val) == sizeof(uint8_t));
   if (write) {
-//    log(val);
+    //    log(val);
     EEPROM.write(address, val);
   } else {
     val = EEPROM.read(address);
-//    log(val);
+    //    log(val);
   }
   address += sizeof(val);
 }
@@ -117,6 +144,10 @@ void serialize_storage(Storage& storage, bool write) {
   }
 
   serialize_float(storage.saved_temp, address, write);
+
+  if (write) {
+    EEPROM.commit();
+  }
 }
 
 bool magic_match(Storage const& storage) {
@@ -145,22 +176,65 @@ void first_time_storage(Storage& storage) {
   serialize_storage(storage, true);
 }
 
-float read_temperature() {
-  log("read_temperature");
-  return random(15,25);
+void deinit_ap() {
+  log("deinit_ap");
+  WiFi.softAPdisconnect(true);
+}
+
+void set_mode(RunMode mode) {
+  _mode = mode;
+}
+
+bool init_sta(char const* ssid, char const* passphrase) {
+  log("init_sta");
+  log(ssid);
+  log(passphrase);
+  WiFi.begin(ssid, passphrase);
+  auto status = WiFi.status();
+  log(status);
+  while (status == WL_IDLE_STATUS) {
+    yield_delay();
+  }
+
+  if (status == WL_CONNECTED) {
+    log("init_sta success");
+    return true;
+  } else {
+    log("init_sta failure");
+    log(status);
+    return false;
+  }
 }
 
 void to_online() {
   log("to_online");
+  set_blink(false, micros());
 
-  // TODO: Try to connect to the Internet...
-  _mode = RunMode::ONLINE;
+  deinit_ap();
+  if (init_sta(_storage.ssid, _storage.passphrase)) {
+    set_mode(RunMode::ONLINE);
+  } else {
+    to_offline();
+  }
+}
+
+void init_ap() {
+  log("init_ap");
+  if (WiFi.softAP(AP_SSID, AP_PASSPHRASE)) {
+    log("init_ap success");
+  } else {
+    log("init_ap failure");
+  }
 }
 
 void to_offline() {
   log("to_offline");
 
-  _mode = RunMode::OFFLINE;
+  set_blink(true, micros());
+
+  init_ap();
+
+  set_mode(RunMode::OFFLINE);
 }
 
 void process_online() {
@@ -179,6 +253,44 @@ void set_relay(bool enabled) {
   digitalWrite(PIN_RELAY, enabled ? HIGH : LOW);
 }
 
+// Turn on or off the LED
+void set_blink(bool on, unsigned long now) {
+  _blink_state = on ? true : false;
+  digitalWrite(PIN_LED, on ? HIGH : LOW);
+  _last_changed_blink = now;
+}
+
+void reset_conversion() {
+  _started_temp_req = false;
+  _last_started_temp_req = 0;
+}
+
+bool process_conversion(unsigned long now, unsigned long conversion_period, float& temp) {
+  // We're waiting for conversion to complete
+  if (_started_temp_req) {
+    if (period_elapsed(_last_started_temp_req, now, conversion_period)) {
+      reset_conversion();
+
+      if (_sensor_interface.isConversionComplete()) {
+        log("conversion complete");
+        temp = _sensor_interface.getTempC(_sensor_address);
+        return true;
+      } else {
+        log("conversion incomplete");
+      }
+    }
+  }
+  // We haven't yet started conversion
+  else {
+    log("requestTemperatures");
+    _sensor_interface.requestTemperatures();
+    _last_started_temp_req = now;
+    _started_temp_req = true;
+  }
+
+  return false;
+}
+
 void process_offline() {
   auto now = micros();
 
@@ -186,33 +298,78 @@ void process_offline() {
 
   // Time to read from the sensor again
   if (period_elapsed(_last_checked_temp, now, PERIOD_CHECK_TEMP)) {
-    log("check temperature");
-    _last_checked_temp = now;
-    auto temp = read_temperature();
-    log(temp);
-    set_relay(temp < _storage.saved_temp);
+    float temp;
+    auto valid_temp = process_conversion(now, _conversion_period, temp);
+
+    if (valid_temp) {
+      _last_checked_temp = now;
+      log(temp);
+      set_relay(temp < _storage.saved_temp);
+    }
   }
 
-  // TODO: Timeout has elapsed, so try going back to online
-//  if (timeout_expired() && internet_settings_exist()) {
-//     to_online();
-//  }
+  // Time to blink again
+  if (period_elapsed(_last_changed_blink, now, _blink_state ? PERIOD_BLINK_OFF : PERIOD_BLINK_ON)) {
+    set_blink(!_blink_state, now);
+  }
+
+  // To retry online again
+  if (period_elapsed(_latest_user_action, now, PERIOD_RETRY_ONLINE)) {
+    log("retry online");
+    if (internet_settings_exist(_storage)) {
+      log("internet settings exist");
+      to_online();
+    } else {
+      log("no internet settings");
+    }
+    _latest_user_action = now;
+  }
 }
 
 void init_serial() {
   Serial.begin(SERIAL_SPEED, SERIAL_CONFIG);
-  while (!Serial) {}
+  while (!Serial) { yield_delay(); }
 }
 
 void init_pins() {
   log("init_pins");
-  pinMode(PIN_RELAY, OUTPUT);
+  pinMode(PIN_LED,      OUTPUT);
+  pinMode(PIN_RELAY,    OUTPUT);
+  pinMode(PIN_ONE_WIRE, INPUT);
+}
+
+void log_device_address(DeviceAddress& device_address) {
+  char address[2 * sizeof(DeviceAddress) / sizeof(*device_address) + 1];
+  sprintf(address, "%02X%02X%02X%02X%02X%02X%02X%02X",
+    device_address[0], device_address[1], device_address[2], device_address[3],
+    device_address[4], device_address[5], device_address[6], device_address[7]);
+  log(address);
+}
+
+void init_sensors() {
+  _sensor_interface.begin();
+  _sensor_interface.setResolution(SENSOR_ADC_BITS);
+  _sensor_interface.setWaitForConversion(false);
+
+  memset(_sensor_address, 0, sizeof(_sensor_address));
+  for (auto i = 0; i < _sensor_interface.getDeviceCount(); ++i) {
+    if (_sensor_interface.getAddress(_sensor_address, i)) {
+      log("temperature address found");
+      log_device_address(_sensor_address);
+    } else {
+      log("temperature address not found")
+    }
+  }
+
+  _conversion_period = _sensor_interface.millisToWaitForConversion(SENSOR_ADC_BITS) * 1000;
+  reset_conversion();
 }
 
 void setup() {
   init_serial();
   init_pins();
   init_storage();
+  init_sensors();
   serialize_storage(_storage, false);
 
   if (!magic_match(_storage)) {
