@@ -12,21 +12,24 @@ const uint8_t PIN_LED = 13;
 const uint8_t PIN_ONE_WIRE = 14;
 const long    SERIAL_SPEED = 115200;
 const SerialConfig SERIAL_CONFIG = SERIAL_8N1;
-const size_t  MAGIC_SIZE = 4;
+const int     MAGIC_SIZE = 4;
 const char    MAGIC[MAGIC_SIZE] = { 'K', 'B', 'L', 'D' };
 const uint8_t VERSION = 1;
-const size_t  SSID_MAX = 32;
-const size_t  PASSPHRASE_MAX = 64;
-const size_t  EEPROM_SIZE = 512;
+const int     SSID_MAX = 32;
+const int     PASSPHRASE_MAX = 64;
+const int     EEPROM_OFFSET = 0xF; // Had trouble reading address 1 after restart, so offset from start a bit
+const int     EEPROM_SIZE = 512;
 const float   DEFAULT_TEMP = 18.0;
 const uint8_t SENSOR_ADC_BITS = 12;
 const char*   AP_SSID = "abcd";
 const char*   AP_PASSPHRASE = "thereisnospoon";
 const int     YIELD_DELAY_MS = 20;
 
+const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
 const unsigned long PERIOD_BLINK_OFF = 800000;
 const unsigned long PERIOD_BLINK_ON  = 100000;
-const unsigned long PERIOD_CHECK_TEMP = 5e6; // 5e6 = 5 seconds
+//const unsigned long PERIOD_CHECK_TEMP = 5e6; // 5e6 = 5 seconds
+const unsigned long PERIOD_CHECK_TEMP = 3e7; // 3e7 = 30 seconds
 //const unsigned long PERIOD_CHECK_TEMP = 3e8; // 3e8 = 5 minutes
 const unsigned long PERIOD_RETRY_ONLINE = 6e7; // 6e7 = 1 minute
 
@@ -37,16 +40,26 @@ enum class RunMode {
 };
 
 struct Storage {
-  char magic[MAGIC_SIZE];
+  char    magic[MAGIC_SIZE];
   uint8_t version;
-  char ssid[SSID_MAX];
-  char passphrase[PASSPHRASE_MAX];
-  float saved_temp;
+  char    ssid[SSID_MAX];
+  char    passphrase[PASSPHRASE_MAX];
+  float   saved_temp;
+};
+
+struct Network {
+  String   ssid;
+  uint8_t  encryption_type;
+  int32_t  rssi;
+  uint8_t* bssid;
+  int32_t  channel;
+  bool     is_hidden;  
 };
 
 // GLOBAL VARIABLES
 RunMode           _mode;
 Storage           _storage;
+unsigned long     _last_wifi_scan     = -PERIOD_WIFI_SCAN;
 unsigned long     _last_checked_temp  = -PERIOD_CHECK_TEMP;
 unsigned long     _last_changed_blink = -PERIOD_BLINK_OFF;
 unsigned long     _latest_user_action = -PERIOD_RETRY_ONLINE;
@@ -70,12 +83,6 @@ bool internet_settings_exist(Storage const& storage) {
   return storage.ssid[0] != 0;
 }
 
-// Initialize storage
-void init_storage() {
-  log("init_storage");
-  EEPROM.begin(EEPROM_SIZE);
-}
-
 // Read/write a single uint8_t value
 void serialize_uint8_t(uint8_t& val, int& address, bool write) {
   //  log("serialize_uint8_t");
@@ -93,15 +100,15 @@ void serialize_uint8_t(uint8_t& val, int& address, bool write) {
 
 // Read/write a single char value
 void serialize_char(char& val, int& address, bool write) {
-  //  log("serialize_char");
-  //  log(address);
+//  log("serialize_char");
+//  log(address);
   assert(sizeof(val) == sizeof(uint8_t));
   if (write) {
-    //    log(val);
+//    log(val);
     EEPROM.write(address, val);
   } else {
     val = EEPROM.read(address);
-    //    log(val);
+//    log(val);
   }
   address += sizeof(val);
 }
@@ -127,7 +134,11 @@ void serialize_float(float& val, int& address, bool write) {
 // Serialize the entirety of EEPROM to/from Storage
 void serialize_storage(Storage& storage, bool write) {
   log("serialize_storage");
-  int address = 0;
+  log(write);
+  
+  EEPROM.begin(EEPROM_SIZE);
+  
+  int address = EEPROM_OFFSET;
 
   for (auto i = 0; i < MAGIC_SIZE; ++i) {
     serialize_char(storage.magic[i], address, write);
@@ -146,7 +157,8 @@ void serialize_storage(Storage& storage, bool write) {
   serialize_float(storage.saved_temp, address, write);
 
   if (write) {
-    EEPROM.commit();
+    log("end");
+    EEPROM.end();
   }
 }
 
@@ -182,26 +194,30 @@ void deinit_ap() {
 }
 
 void set_mode(RunMode mode) {
-  _mode = mode;
+  _mode = mode;  
 }
 
 bool init_sta(char const* ssid, char const* passphrase) {
   log("init_sta");
   log(ssid);
   log(passphrase);
-  WiFi.begin(ssid, passphrase);
-  auto status = WiFi.status();
-  log(status);
+
+  WiFi.mode(WIFI_STA); 
+  auto status = WiFi.begin(ssid, passphrase);
+
   while (status == WL_IDLE_STATUS) {
     yield_delay();
+    status = WiFi.status();
   }
+
+  log("got status");
+  log(status);
 
   if (status == WL_CONNECTED) {
     log("init_sta success");
     return true;
   } else {
     log("init_sta failure");
-    log(status);
     return false;
   }
 }
@@ -212,24 +228,26 @@ void to_online() {
 
   deinit_ap();
   if (init_sta(_storage.ssid, _storage.passphrase)) {
-    set_mode(RunMode::ONLINE);
+    set_mode(RunMode::ONLINE);    
   } else {
     to_offline();
-  }
+  }    
 }
 
 void init_ap() {
   log("init_ap");
+  log(WiFi.mode(WIFI_AP_STA));
+
   if (WiFi.softAP(AP_SSID, AP_PASSPHRASE)) {
     log("init_ap success");
   } else {
     log("init_ap failure");
-  }
+  }  
 }
 
 void to_offline() {
   log("to_offline");
-
+  
   set_blink(true, micros());
 
   init_ap();
@@ -262,7 +280,7 @@ void set_blink(bool on, unsigned long now) {
 
 void reset_conversion() {
   _started_temp_req = false;
-  _last_started_temp_req = 0;
+  _last_started_temp_req = 0;  
 }
 
 bool process_conversion(unsigned long now, unsigned long conversion_period, float& temp) {
@@ -270,7 +288,7 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
   if (_started_temp_req) {
     if (period_elapsed(_last_started_temp_req, now, conversion_period)) {
       reset_conversion();
-
+      
       if (_sensor_interface.isConversionComplete()) {
         log("conversion complete");
         temp = _sensor_interface.getTempC(_sensor_address);
@@ -279,7 +297,7 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
         log("conversion incomplete");
       }
     }
-  }
+  } 
   // We haven't yet started conversion
   else {
     log("requestTemperatures");
@@ -287,8 +305,51 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
     _last_started_temp_req = now;
     _started_temp_req = true;
   }
+  
+  return false;  
+}
 
-  return false;
+String encryption_type_string(uint8_t encryption_type) {
+  switch (encryption_type) {
+    case ENC_TYPE_WEP:  return "WEP";
+    case ENC_TYPE_TKIP: return "TKIP";
+    case ENC_TYPE_CCMP: return "CCMP";
+    case ENC_TYPE_NONE: return "NONE";
+    case ENC_TYPE_AUTO: return "AUTO";
+    default: return "UNKNOWN";
+  }
+}
+
+void log_wifi(Network const& network) {
+  String line = 
+    network.ssid + " " +
+    "(" + encryption_type_string(network.encryption_type) + ") " + 
+    "RSSI: " + network.rssi + " " +
+    "CHANNEL: " + network.channel + " " +
+    (network.is_hidden ? "HIDDEN!" : "");
+  log(line);
+}
+
+// Callback for networks being found
+void on_scan_complete(int found) {
+  log("on_scan_complete");
+  log(found);
+
+  for (int i = 0; i < found; ++i) {
+    Network network;
+    WiFi.getNetworkInfo(
+      i,
+      network.ssid,
+      network.encryption_type,
+      network.rssi,
+      network.bssid,
+      network.channel,
+      network.is_hidden
+    );
+    log_wifi(network);    
+  }
+
+  WiFi.scanDelete();
 }
 
 void process_offline() {
@@ -296,11 +357,21 @@ void process_offline() {
 
   // TODO: Set up as AP and run server
 
+  // Time to scan for WiFi
+  if (period_elapsed(_last_wifi_scan, now, PERIOD_WIFI_SCAN)) {
+    auto status = WiFi.scanComplete();
+    if (status == WIFI_SCAN_FAILED) {
+      log("scanning wifi");
+      WiFi.scanNetworksAsync(on_scan_complete, true);
+    }
+    _last_wifi_scan = now;
+  }
+  
   // Time to read from the sensor again
   if (period_elapsed(_last_checked_temp, now, PERIOD_CHECK_TEMP)) {
     float temp;
     auto valid_temp = process_conversion(now, _conversion_period, temp);
-
+    
     if (valid_temp) {
       _last_checked_temp = now;
       log(temp);
@@ -318,7 +389,7 @@ void process_offline() {
     log("retry online");
     if (internet_settings_exist(_storage)) {
       log("internet settings exist");
-      to_online();
+      to_online();    
     } else {
       log("no internet settings");
     }
@@ -341,7 +412,7 @@ void init_pins() {
 void log_device_address(DeviceAddress& device_address) {
   char address[2 * sizeof(DeviceAddress) / sizeof(*device_address) + 1];
   sprintf(address, "%02X%02X%02X%02X%02X%02X%02X%02X",
-    device_address[0], device_address[1], device_address[2], device_address[3],
+    device_address[0], device_address[1], device_address[2], device_address[3], 
     device_address[4], device_address[5], device_address[6], device_address[7]);
   log(address);
 }
@@ -350,7 +421,7 @@ void init_sensors() {
   _sensor_interface.begin();
   _sensor_interface.setResolution(SENSOR_ADC_BITS);
   _sensor_interface.setWaitForConversion(false);
-
+  
   memset(_sensor_address, 0, sizeof(_sensor_address));
   for (auto i = 0; i < _sensor_interface.getDeviceCount(); ++i) {
     if (_sensor_interface.getAddress(_sensor_address, i)) {
@@ -368,7 +439,6 @@ void init_sensors() {
 void setup() {
   init_serial();
   init_pins();
-  init_storage();
   init_sensors();
   serialize_storage(_storage, false);
 

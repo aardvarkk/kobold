@@ -76,4 +76,4 @@ Flash Freq: 40MHz
 CPU Freq: 80MHz
 Builtin LED: 13
 Upload Speed: 115200
-Erase Flash: All Flash Contents
+Erase Flash: Sketch Only <- All Flash Contents will erase the EEPROM too!
