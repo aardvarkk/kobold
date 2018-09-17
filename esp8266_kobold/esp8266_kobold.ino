@@ -1,29 +1,39 @@
 // DEFINES
 #define REQUIRESALARMS false
 
+#define log(x) {     \
+  Serial.println(x); \
+  _log_history[_log_history_idx] = String(x); \
+  _log_history_idx = (_log_history_idx + 1) % LOG_HISTORY_LENGTH; \
+  _valid_log_history = min(_valid_log_history + 1, LOG_HISTORY_LENGTH); \
+}
+
 #include <assert.h>
 #include <DallasTemperature.h>
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 
 // CONSTANTS
-const uint8_t PIN_RELAY = 12;
-const uint8_t PIN_LED = 13;
-const uint8_t PIN_ONE_WIRE = 14;
-const long    SERIAL_SPEED = 115200;
+const uint8_t  PIN_RELAY = 12;
+const uint8_t  PIN_LED = 13;
+const uint8_t  PIN_ONE_WIRE = 14;
+const long     SERIAL_SPEED = 115200;
 const SerialConfig SERIAL_CONFIG = SERIAL_8N1;
-const int     MAGIC_SIZE = 4;
-const char    MAGIC[MAGIC_SIZE] = { 'K', 'B', 'L', 'D' };
-const uint8_t VERSION = 1;
-const int     SSID_MAX = 32;
-const int     PASSPHRASE_MAX = 64;
-const int     EEPROM_OFFSET = 0xF; // Had trouble reading address 1 after restart, so offset from start a bit
-const int     EEPROM_SIZE = 512;
-const float   DEFAULT_TEMP = 18.0;
-const uint8_t SENSOR_ADC_BITS = 12;
-const char*   AP_SSID = "abcd";
-const char*   AP_PASSPHRASE = "thereisnospoon";
-const int     YIELD_DELAY_MS = 20;
+const int      MAGIC_SIZE = 4;
+const char     MAGIC[MAGIC_SIZE] = { 'K', 'B', 'L', 'D' };
+const uint8_t  VERSION = 1;
+const int      SSID_MAX = 32;
+const int      PASSPHRASE_MAX = 64;
+const int      EEPROM_OFFSET = 0xF; // Had trouble reading address 1 after restart, so offset from start a bit
+const int      EEPROM_SIZE = 512;
+const float    DEFAULT_TEMP = 18.0;
+const uint8_t  SENSOR_ADC_BITS = 12;
+const char*    AP_SSID = "abcd";
+const char*    AP_PASSPHRASE = "thereisnospoon";
+const int      YIELD_DELAY_MS = 20;
+const uint16_t SERVER_PORT = 80;
+const int      LOG_HISTORY_LENGTH = 0x20;
 
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
 const unsigned long PERIOD_BLINK_OFF = 800000;
@@ -70,10 +80,10 @@ bool              _blink_state;
 OneWire           _one_wire_bus(PIN_ONE_WIRE);
 DallasTemperature _sensor_interface(&_one_wire_bus);
 DeviceAddress     _sensor_address;
-
-#define log(x) {     \
-  Serial.println(x); \
-}
+ESP8266WebServer  _server;
+String            _log_history[LOG_HISTORY_LENGTH];
+int               _log_history_idx = 0;
+int               _valid_log_history = 0;
 
 void yield_delay() {
   delay(YIELD_DELAY_MS);
@@ -118,13 +128,13 @@ void serialize_float(float& val, int& address, bool write) {
   assert(sizeof(val) == 4 * sizeof(uint8_t));
   if (write) {
     for (auto i = 0; i < 4; ++i) {
-      EEPROM.write(address, static_cast<uint8_t>(static_cast<uint32_t>(val) >> (sizeof(uint8_t) * i)));
+      EEPROM.write(address, static_cast<uint8_t>(static_cast<uint32_t>(val) >> (8 * sizeof(uint8_t) * i)));
       address += sizeof(uint8_t);
     }
   } else {
-    uint32_t val_temp;
+    uint32_t val_temp = 0;
     for (auto i = 0; i < 4; ++i) {
-      val_temp |= EEPROM.read(address) << (sizeof(uint8_t) * i);
+      val_temp |= EEPROM.read(address) << (8 * sizeof(uint8_t) * i);
       address += sizeof(uint8_t);
     }
     val = static_cast<float>(val_temp);
@@ -159,6 +169,9 @@ void serialize_storage(Storage& storage, bool write) {
   if (write) {
     log("end");
     EEPROM.end();
+  } else {
+    log("saved temp");
+    log(storage.saved_temp);
   }
 }
 
@@ -166,12 +179,15 @@ bool magic_match(Storage const& storage) {
   log("magic_match");
 
   for (auto i = 0; i < MAGIC_SIZE; ++i) {
-    log(storage.magic[i]);
-    log(MAGIC[i]);
+//    log(storage.magic[i]);
+//    log(MAGIC[i]);
     if (storage.magic[i] != MAGIC[i]) {
+      log("no match!");
       return false;
     }
   }
+
+  log("matched!");
   return true;
 }
 
@@ -191,6 +207,11 @@ void first_time_storage(Storage& storage) {
 void deinit_ap() {
   log("deinit_ap");
   WiFi.softAPdisconnect(true);
+}
+
+void deinit_webserver() {
+  log("deinit_webserver");
+  _server.close();
 }
 
 void set_mode(RunMode mode) {
@@ -227,6 +248,8 @@ void to_online() {
   set_blink(false, micros());
 
   deinit_ap();
+  deinit_webserver();
+  
   if (init_sta(_storage.ssid, _storage.passphrase)) {
     set_mode(RunMode::ONLINE);    
   } else {
@@ -242,7 +265,35 @@ void init_ap() {
     log("init_ap success");
   } else {
     log("init_ap failure");
+  }
+}
+
+// Concatenate all recent logs into a single string
+String get_log_contents() {
+  String contents;
+  int idx = _log_history_idx - _valid_log_history;
+  if (idx < 0) idx += LOG_HISTORY_LENGTH;
+  for (int i = 0; i < _valid_log_history; ++i) {
+    contents += _log_history[(idx + i) % LOG_HISTORY_LENGTH];
+    contents += "\n";
   }  
+  return contents;
+}
+
+void init_webserver(ESP8266WebServer& server) {
+  log("init_webserver");
+  server.begin(SERVER_PORT);
+
+  server.on("/logs", [&server]() {
+    log("/logs");
+    server.send(200, "text/plain", get_log_contents());
+  });
+
+  server.on("/reset", [&server]() {
+    log("/reset");
+    first_time_storage(_storage);
+    server.send(200);
+  });
 }
 
 void to_offline() {
@@ -251,6 +302,7 @@ void to_offline() {
   set_blink(true, micros());
 
   init_ap();
+  init_webserver(_server);
 
   set_mode(RunMode::OFFLINE);
 }
@@ -266,8 +318,9 @@ bool period_elapsed(unsigned long last_occurrence, unsigned long now, unsigned l
 
 // Enable or disable the relay
 void set_relay(bool enabled) {
-  log("set_relay");
-  log(enabled);
+//  log("set_relay");
+//  log(enabled);
+  log(enabled ? "relay ON" : "relay OFF");
   digitalWrite(PIN_RELAY, enabled ? HIGH : LOW);
 }
 
@@ -352,10 +405,23 @@ void on_scan_complete(int found) {
   WiFi.scanDelete();
 }
 
+void control_decision(float& cur_temp, float& tgt_temp) {
+  bool less_than = cur_temp < tgt_temp;
+    
+  String decision;
+  decision += String(cur_temp);
+  decision += String(" is ") + (less_than ? "less than" : "greater than") + " ";
+  decision += String(tgt_temp);
+  log(decision);  
+  
+  set_relay(less_than);
+}
+
 void process_offline() {
   auto now = micros();
 
-  // TODO: Set up as AP and run server
+  // Run the webserver
+  _server.handleClient();
 
   // Time to scan for WiFi
   if (period_elapsed(_last_wifi_scan, now, PERIOD_WIFI_SCAN)) {
@@ -374,8 +440,7 @@ void process_offline() {
     
     if (valid_temp) {
       _last_checked_temp = now;
-      log(temp);
-      set_relay(temp < _storage.saved_temp);
+      control_decision(temp, _storage.saved_temp);
     }
   }
 
