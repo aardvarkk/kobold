@@ -34,6 +34,8 @@ const char*    AP_PASSPHRASE = "thereisnospoon";
 const int      YIELD_DELAY_MS = 20;
 const uint16_t SERVER_PORT = 80;
 const int      LOG_HISTORY_LENGTH = 0x20;
+const uint8_t  MAX_NETWORKS = 0x40;
+const bool     SCAN_FOR_HIDDEN = false;
 
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
 const unsigned long PERIOD_BLINK_OFF = 800000;
@@ -84,6 +86,8 @@ ESP8266WebServer  _server;
 String            _log_history[LOG_HISTORY_LENGTH];
 int               _log_history_idx = 0;
 int               _valid_log_history = 0;
+uint8_t           _num_found_networks = 0;
+Network           _found_networks[MAX_NETWORKS];
 
 void yield_delay() {
   delay(YIELD_DELAY_MS);
@@ -280,10 +284,61 @@ String get_log_contents() {
   return contents;
 }
 
+String render_ssid(Network const& network) {
+  String ssid;
+  ssid += "<div><input type=\"radio\" name=\"ssid\" id=\"";
+  ssid += network.ssid;
+  ssid += "\" value=\"";
+  ssid += network.ssid;
+  ssid += "\"/><label for=\"";
+  ssid += network.ssid;
+  ssid += "\">";
+  ssid += network.ssid;
+  ssid += "</label></div>";
+  return ssid;
+}
+
+String render_ssids(Network const* networks, uint8_t count) {
+  String ssids;
+  for (auto i = 0; i < count; ++i) {
+    ssids += render_ssid(networks[i]);
+  }
+  return ssids;
+}
+
+String render_root() {
+  String html;
+
+  html += "<html><head><title>Kobold</title></head><body><form method=\"post\" action=\"/settings\">";
+  html += "<fieldset><legend>SSID</legend>";
+  html += render_ssids(_found_networks, _num_found_networks);
+  html += "</fieldset><fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
+  html += "<input type=\"submit\"/></form></body></html>";
+
+  return html;
+}
+
 void init_webserver(ESP8266WebServer& server) {
   log("init_webserver");
   server.begin(SERVER_PORT);
 
+  server.on("/", [&server]() {
+    log("/");
+    server.send(200, "text/html", render_root());    
+  });
+
+  server.on("/settings", HTTP_POST, [&server]() {
+    log("/settings");
+
+    int args = server.args();
+    for (int i = 0; i < args; ++i) {
+      log(server.argName(i));
+      log(server.arg(i));
+    }
+
+    server.send(200);
+  });
+  
   server.on("/logs", [&server]() {
     log("/logs");
     server.send(200, "text/plain", get_log_contents());
@@ -386,10 +441,12 @@ void log_wifi(Network const& network) {
 // Callback for networks being found
 void on_scan_complete(int found) {
   log("on_scan_complete");
-  log(found);
 
-  for (int i = 0; i < found; ++i) {
-    Network network;
+  _num_found_networks = found;
+  log(_num_found_networks);
+
+  for (int i = 0; i < _num_found_networks; ++i) {
+    Network& network = _found_networks[i];
     WiFi.getNetworkInfo(
       i,
       network.ssid,
@@ -428,7 +485,7 @@ void process_offline() {
     auto status = WiFi.scanComplete();
     if (status == WIFI_SCAN_FAILED) {
       log("scanning wifi");
-      WiFi.scanNetworksAsync(on_scan_complete, true);
+      WiFi.scanNetworksAsync(on_scan_complete, SCAN_FOR_HIDDEN);
     }
     _last_wifi_scan = now;
   }
