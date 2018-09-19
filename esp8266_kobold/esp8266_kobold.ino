@@ -1,6 +1,10 @@
 // DEFINES
 #define REQUIRESALARMS false
 
+// Active LOW (both LED and relay)
+#define ACTIVE   LOW
+#define INACTIVE HIGH
+
 #define log(x) {     \
   Serial.println(x); \
   _log_history[_log_history_idx] = String(x); \
@@ -16,6 +20,7 @@
 #include <ESP8266WebServer.h>
 
 // CONSTANTS
+const bool     FORCE_OFFLINE = true;
 const uint8_t  PIN_RELAY = 12;
 const uint8_t  PIN_LED = 13;
 const uint8_t  PIN_ONE_WIRE = 14;
@@ -30,6 +35,7 @@ const int      EEPROM_OFFSET = 0xF; // Had trouble reading address 1 after resta
 const int      EEPROM_SIZE = 512;
 const float    DEFAULT_TEMP = 18.0;
 const uint8_t  SENSOR_ADC_BITS = 12;
+const char*    REPORT_URL = "http://www.google.ca/";
 const char*    AP_SSID = "abcd";
 const char*    AP_PASSPHRASE = "thereisnospoon";
 const int      YIELD_DELAY_MS = 20;
@@ -39,8 +45,8 @@ const uint8_t  MAX_NETWORKS = 0x40;
 const bool     SCAN_FOR_HIDDEN = false;
 
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
-const unsigned long PERIOD_BLINK_OFF = 800000;
-const unsigned long PERIOD_BLINK_ON  = 100000;
+const unsigned long PERIOD_BLINK_OFF = 950000;
+const unsigned long PERIOD_BLINK_ON  =  50000;
 //const unsigned long PERIOD_CHECK_TEMP = 5e6; // 5e6 = 5 seconds
 const unsigned long PERIOD_CHECK_TEMP = 3e7; // 3e7 = 30 seconds
 //const unsigned long PERIOD_CHECK_TEMP = 3e8; // 3e8 = 5 minutes
@@ -92,9 +98,8 @@ Network           _found_networks[MAX_NETWORKS];
 
 void reset_timers(unsigned long now) {
   log("reset_timers");
-  _last_wifi_scan     = now;
-  _last_checked_temp  = now;
-  _last_changed_blink = now;
+  _last_wifi_scan     = now - PERIOD_WIFI_SCAN;
+  _last_checked_temp  = now - PERIOD_CHECK_TEMP;
   _latest_user_action = now;
 }
 
@@ -282,17 +287,22 @@ bool init_sta(char const* ssid, char const* passphrase) {
 
 void to_online(unsigned long now) {
   log("to_online");
-  
-  reset_timers(now);
-  set_blink(false, now);
 
-  deinit_ap();
-  deinit_webserver();
-
-  if (init_sta(_storage.ssid, _storage.passphrase)) {
-    set_mode(RunMode::ONLINE);
-  } else {
+  if (FORCE_OFFLINE) {
+    log("force_offline");
     to_offline(now);
+  } else {
+    reset_timers(now);
+    digitalWrite(PIN_LED, INACTIVE);
+
+    deinit_ap();
+    deinit_webserver();
+
+    if (init_sta(_storage.ssid, _storage.passphrase)) {
+      set_mode(RunMode::ONLINE);
+    } else {
+      to_offline(now);
+    }
   }
 }
 
@@ -412,28 +422,41 @@ void to_offline(unsigned long now) {
   set_mode(RunMode::OFFLINE);
 }
 
-void report_temperature(float temp) {
+int report_temperature(float temp) {
   log("report_temperature");
   log(temp);
 
-  HTTPClient client;
+  int code = -1;
 
-//      client.begin("http://192.168.0.12/test.html");
-  client.begin("http://www.google.ca/");
-  auto code = client.GET();
-  if (code < 0) {
-    log("http request failed");
-    log(code);
-    log(HTTPClient::errorToString(code));
-    to_offline(micros());
-  } else {
-    log("http request succeeded");
-    log(code);
-    switch (code) {
-      default: break;
+  digitalWrite(PIN_LED, ACTIVE);
+
+  HTTPClient client;
+  auto success = client.begin(REPORT_URL);
+  if (success) {
+    code = client.GET();
+    if (code < 0) {
+      log("http request failed");
+      log(code);
+      log(HTTPClient::errorToString(code));
+    } else {
+
+      log("http request succeeded");
+      log(code);
+      switch (code) {
+        default:
+          log("unrecognized code");
+          code = -1;
+          break;
+      }
     }
+  } else {
+    log("failed to start HTTP client");
   }
+
+  digitalWrite(PIN_LED, INACTIVE);
+
   client.end();
+  return code;
 }
 
 void process_online() {
@@ -446,7 +469,12 @@ void process_online() {
 
     if (valid_temp) {
       _last_checked_temp = now;
-      report_temperature(temp);
+      auto code = report_temperature(temp);
+      if (code < 0) {
+        to_offline(now);
+      } else {
+
+      }
     }
   }
 }
@@ -461,13 +489,13 @@ void set_relay(bool enabled) {
 //  log("set_relay");
 //  log(enabled);
   log(enabled ? "relay ON" : "relay OFF");
-  digitalWrite(PIN_RELAY, enabled ? HIGH : LOW);
+  digitalWrite(PIN_RELAY, enabled ? ACTIVE : INACTIVE);
 }
 
 // Turn on or off the LED
 void set_blink(bool on, unsigned long now) {
-  _blink_state = on ? true : false;
-  digitalWrite(PIN_LED, on ? HIGH : LOW);
+  _blink_state = on;
+  digitalWrite(PIN_LED, on ? ACTIVE : INACTIVE);
   _last_changed_blink = now;
 }
 
@@ -587,7 +615,7 @@ void process_offline() {
   }
 
   // Time to blink again
-  if (period_elapsed(_last_changed_blink, now, _blink_state ? PERIOD_BLINK_OFF : PERIOD_BLINK_ON)) {
+  if (period_elapsed(_last_changed_blink, now, _blink_state ? PERIOD_BLINK_ON : PERIOD_BLINK_OFF)) {
     set_blink(!_blink_state, now);
   }
 
@@ -670,4 +698,3 @@ void loop() {
       break;
   }
 }
-
