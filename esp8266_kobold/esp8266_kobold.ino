@@ -33,7 +33,7 @@ const int      SSID_MAX = 32;
 const int      PASSPHRASE_MAX = 64;
 const int      EEPROM_OFFSET = 0xF; // Had trouble reading address 1 after restart, so offset from start a bit
 const int      EEPROM_SIZE = 512;
-const float    DEFAULT_TEMP = 18.0;
+const float    DEFAULT_SETPOINT = 18.0;
 const uint8_t  SENSOR_ADC_BITS = 12;
 const char*    REPORT_URL = "http://www.google.ca/";
 const char*    AP_SSID = "abcd";
@@ -63,7 +63,7 @@ struct Storage {
   uint8_t version;
   char    ssid[SSID_MAX];
   char    passphrase[PASSPHRASE_MAX];
-  float   saved_temp;
+  float   setpoint;
 };
 
 struct Network {
@@ -191,14 +191,14 @@ void serialize_storage(Storage& storage, bool write) {
     serialize_char(storage.passphrase[i], address, write);
   }
 
-  serialize_float(storage.saved_temp, address, write);
+  serialize_float(storage.setpoint, address, write);
 
   if (write) {
     log("end");
     EEPROM.end();
   } else {
-    log("saved temp");
-    log(storage.saved_temp);
+    log("setpoint");
+    log(storage.setpoint);
   }
 }
 
@@ -227,7 +227,7 @@ void first_time_storage(Storage& storage) {
   storage.version = VERSION;
   memset(storage.ssid, 0, sizeof(storage.ssid));
   memset(storage.passphrase, 0, sizeof(storage.passphrase));
-  storage.saved_temp = DEFAULT_TEMP;
+  storage.setpoint = DEFAULT_SETPOINT;
   serialize_storage(storage, true);
 }
 
@@ -357,7 +357,10 @@ String render_root() {
   html += "<html><head><title>Kobold</title></head><body><form method=\"post\" action=\"/settings\">";
   html += "<fieldset><legend>SSID</legend>";
   html += render_ssids(_found_networks, _num_found_networks);
-  html += "</fieldset><fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
+  html += "</fieldset>";
+  html += "<fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
+  html += "<fieldset><legend>Set Point</legend><input type=\"number\" value=\"";
+  html += String(_storage.setpoint) + "\" step=\"0.1\" min=\"0.0\" max=\"25.0\" name=\"setpoint\"/></fieldset>";
   html += "<input type=\"submit\"/></form></body></html>";
 
   return html;
@@ -375,7 +378,7 @@ void init_webserver(ESP8266WebServer& server) {
   server.on("/settings", HTTP_POST, [&server]() {
     log("/settings");
 
-    String ssid, password;
+    String ssid, password, setpoint;
 
     for (int i = 0; i < server.args(); ++i) {
       auto name = server.argName(i);
@@ -386,13 +389,24 @@ void init_webserver(ESP8266WebServer& server) {
 
       if (name == "ssid") {
         ssid = val;
-      } else if (name == "password") {
+      }
+
+      if (name == "password") {
         password = val;
       }
 
-      if (ssid.length() && password.length()) {
-        update_internet_settings(ssid, password);
+      if (name == "setpoint") {
+        setpoint = val;
       }
+    }
+
+    if (ssid.length() && password.length()) {
+      update_internet_settings(ssid, password);
+    }
+
+    if (setpoint.length()) {
+      _storage.setpoint = setpoint.toFloat();
+      serialize_storage(_storage, true);
     }
 
     server.send(200);
@@ -422,7 +436,7 @@ void to_offline(unsigned long now) {
   set_mode(RunMode::OFFLINE);
 }
 
-int report_temperature(float temp) {
+int report_temperature(float temp, String& response) {
   log("report_temperature");
   log(temp);
 
@@ -434,20 +448,13 @@ int report_temperature(float temp) {
   auto success = client.begin(REPORT_URL);
   if (success) {
     code = client.GET();
+    log(code);
     if (code < 0) {
       log("http request failed");
-      log(code);
       log(HTTPClient::errorToString(code));
     } else {
-
       log("http request succeeded");
-      log(code);
-      switch (code) {
-        default:
-          log("unrecognized code");
-          code = -1;
-          break;
-      }
+      response = client.getString();
     }
   } else {
     log("failed to start HTTP client");
@@ -469,11 +476,30 @@ void process_online() {
 
     if (valid_temp) {
       _last_checked_temp = now;
-      auto code = report_temperature(temp);
+
+      String response;
+      auto code = report_temperature(temp, response);
       if (code < 0) {
         to_offline(now);
       } else {
-
+        switch (code) {
+          case 200:
+            log("cool");
+            set_relay(false);
+            break;
+          case 201:
+            log("heat");
+            set_relay(true);
+            break;
+          case 205:
+            log("manual disconnect request");
+            to_offline(now);
+            break;
+          default:
+            log("unrecognized code");
+            code = -1;
+            break;
+        }
       }
     }
   }
@@ -610,7 +636,7 @@ void process_offline() {
 
     if (valid_temp) {
       _last_checked_temp = now;
-      control_decision(temp, _storage.saved_temp);
+      control_decision(temp, _storage.setpoint);
     }
   }
 
@@ -622,7 +648,7 @@ void process_offline() {
   // To retry online again
   if (period_elapsed(_latest_user_action, now, PERIOD_RETRY_ONLINE)) {
     log("retry online");
-    if (internet_settings_exist(_storage)) {
+    if (internet_settings_exist(_storage) && !FORCE_OFFLINE) {
       log("internet settings exist");
       to_online(now);
     } else {
