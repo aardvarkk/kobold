@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <DallasTemperature.h>
 #include <EEPROM.h>
+#include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 
@@ -65,18 +66,18 @@ struct Network {
   int32_t  rssi;
   uint8_t* bssid;
   int32_t  channel;
-  bool     is_hidden;  
+  bool     is_hidden;
 };
 
 // GLOBAL VARIABLES
 RunMode           _mode;
 Storage           _storage;
-unsigned long     _last_wifi_scan     = -PERIOD_WIFI_SCAN;
-unsigned long     _last_checked_temp  = -PERIOD_CHECK_TEMP;
-unsigned long     _last_changed_blink = -PERIOD_BLINK_OFF;
-unsigned long     _latest_user_action = -PERIOD_RETRY_ONLINE;
-unsigned long     _conversion_period;
+unsigned long     _last_wifi_scan;
+unsigned long     _last_checked_temp;
+unsigned long     _last_changed_blink;
+unsigned long     _latest_user_action;
 unsigned long     _last_started_temp_req;
+unsigned long     _conversion_period;
 bool              _started_temp_req;
 bool              _blink_state;
 OneWire           _one_wire_bus(PIN_ONE_WIRE);
@@ -89,12 +90,29 @@ int               _valid_log_history = 0;
 uint8_t           _num_found_networks = 0;
 Network           _found_networks[MAX_NETWORKS];
 
+void reset_timers(unsigned long now) {
+  log("reset_timers");
+  _last_wifi_scan     = now;
+  _last_checked_temp  = now;
+  _last_changed_blink = now;
+  _latest_user_action = now;
+}
+
 void yield_delay() {
   delay(YIELD_DELAY_MS);
 }
 
 bool internet_settings_exist(Storage const& storage) {
   return storage.ssid[0] != 0;
+}
+
+void update_internet_settings(
+  String const& ssid,
+  String const& passphrase
+) {
+  ssid.toCharArray(_storage.ssid, SSID_MAX);
+  passphrase.toCharArray(_storage.passphrase, PASSPHRASE_MAX);
+  serialize_storage(_storage, true);
 }
 
 // Read/write a single uint8_t value
@@ -149,9 +167,9 @@ void serialize_float(float& val, int& address, bool write) {
 void serialize_storage(Storage& storage, bool write) {
   log("serialize_storage");
   log(write);
-  
+
   EEPROM.begin(EEPROM_SIZE);
-  
+
   int address = EEPROM_OFFSET;
 
   for (auto i = 0; i < MAGIC_SIZE; ++i) {
@@ -219,7 +237,21 @@ void deinit_webserver() {
 }
 
 void set_mode(RunMode mode) {
-  _mode = mode;  
+  _mode = mode;
+}
+
+String wifi_status(int code) {
+  switch (code) {
+    case WL_NO_SHIELD:       return "WL_NO_SHIELD";
+    case WL_IDLE_STATUS:     return "WL_IDLE_STATUS";
+    case WL_NO_SSID_AVAIL:   return "WL_NO_SSID_AVAIL";
+    case WL_SCAN_COMPLETED:  return "WL_SCAN_COMPLETED";
+    case WL_CONNECTED:       return "WL_CONNECTED";
+    case WL_CONNECT_FAILED:  return "WL_CONNECT_FAILED";
+    case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
+    case WL_DISCONNECTED:    return "WL_DISCONNECTED";
+    default:                 return "UNKNOWN";
+  }
 }
 
 bool init_sta(char const* ssid, char const* passphrase) {
@@ -227,16 +259,17 @@ bool init_sta(char const* ssid, char const* passphrase) {
   log(ssid);
   log(passphrase);
 
-  WiFi.mode(WIFI_STA); 
+  WiFi.mode(WIFI_STA);
   auto status = WiFi.begin(ssid, passphrase);
 
-  while (status == WL_IDLE_STATUS) {
+  while (status == WL_DISCONNECTED) {
     yield_delay();
     status = WiFi.status();
   }
 
   log("got status");
   log(status);
+  log(wifi_status(status));
 
   if (status == WL_CONNECTED) {
     log("init_sta success");
@@ -247,18 +280,20 @@ bool init_sta(char const* ssid, char const* passphrase) {
   }
 }
 
-void to_online() {
+void to_online(unsigned long now) {
   log("to_online");
-  set_blink(false, micros());
+  
+  reset_timers(now);
+  set_blink(false, now);
 
   deinit_ap();
   deinit_webserver();
-  
+
   if (init_sta(_storage.ssid, _storage.passphrase)) {
-    set_mode(RunMode::ONLINE);    
+    set_mode(RunMode::ONLINE);
   } else {
-    to_offline();
-  }    
+    to_offline(now);
+  }
 }
 
 void init_ap() {
@@ -280,7 +315,7 @@ String get_log_contents() {
   for (int i = 0; i < _valid_log_history; ++i) {
     contents += _log_history[(idx + i) % LOG_HISTORY_LENGTH];
     contents += "\n";
-  }  
+  }
   return contents;
 }
 
@@ -324,21 +359,35 @@ void init_webserver(ESP8266WebServer& server) {
 
   server.on("/", [&server]() {
     log("/");
-    server.send(200, "text/html", render_root());    
+    server.send(200, "text/html", render_root());
   });
 
   server.on("/settings", HTTP_POST, [&server]() {
     log("/settings");
 
-    int args = server.args();
-    for (int i = 0; i < args; ++i) {
-      log(server.argName(i));
-      log(server.arg(i));
+    String ssid, password;
+
+    for (int i = 0; i < server.args(); ++i) {
+      auto name = server.argName(i);
+      auto val  = server.arg(i);
+
+      log(name);
+      log(val);
+
+      if (name == "ssid") {
+        ssid = val;
+      } else if (name == "password") {
+        password = val;
+      }
+
+      if (ssid.length() && password.length()) {
+        update_internet_settings(ssid, password);
+      }
     }
 
     server.send(200);
   });
-  
+
   server.on("/logs", [&server]() {
     log("/logs");
     server.send(200, "text/plain", get_log_contents());
@@ -351,10 +400,11 @@ void init_webserver(ESP8266WebServer& server) {
   });
 }
 
-void to_offline() {
+void to_offline(unsigned long now) {
   log("to_offline");
-  
-  set_blink(true, micros());
+
+  reset_timers(now);
+  set_blink(true, now);
 
   init_ap();
   init_webserver(_server);
@@ -362,8 +412,43 @@ void to_offline() {
   set_mode(RunMode::OFFLINE);
 }
 
-void process_online() {
+void report_temperature(float temp) {
+  log("report_temperature");
+  log(temp);
 
+  HTTPClient client;
+
+//      client.begin("http://192.168.0.12/test.html");
+  client.begin("http://www.google.ca/");
+  auto code = client.GET();
+  if (code < 0) {
+    log("http request failed");
+    log(code);
+    log(HTTPClient::errorToString(code));
+    to_offline(micros());
+  } else {
+    log("http request succeeded");
+    log(code);
+    switch (code) {
+      default: break;
+    }
+  }
+  client.end();
+}
+
+void process_online() {
+  auto now = micros();
+
+  // Time to read from the sensor again
+  if (period_elapsed(_last_checked_temp, now, PERIOD_CHECK_TEMP)) {
+    float temp;
+    auto valid_temp = process_conversion(now, _conversion_period, temp);
+
+    if (valid_temp) {
+      _last_checked_temp = now;
+      report_temperature(temp);
+    }
+  }
 }
 
 // Return true when we've waited long enough since a previous occurrence of an event
@@ -388,7 +473,7 @@ void set_blink(bool on, unsigned long now) {
 
 void reset_conversion() {
   _started_temp_req = false;
-  _last_started_temp_req = 0;  
+  _last_started_temp_req = 0;
 }
 
 bool process_conversion(unsigned long now, unsigned long conversion_period, float& temp) {
@@ -396,7 +481,7 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
   if (_started_temp_req) {
     if (period_elapsed(_last_started_temp_req, now, conversion_period)) {
       reset_conversion();
-      
+
       if (_sensor_interface.isConversionComplete()) {
         log("conversion complete");
         temp = _sensor_interface.getTempC(_sensor_address);
@@ -405,7 +490,7 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
         log("conversion incomplete");
       }
     }
-  } 
+  }
   // We haven't yet started conversion
   else {
     log("requestTemperatures");
@@ -413,8 +498,8 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
     _last_started_temp_req = now;
     _started_temp_req = true;
   }
-  
-  return false;  
+
+  return false;
 }
 
 String encryption_type_string(uint8_t encryption_type) {
@@ -429,9 +514,9 @@ String encryption_type_string(uint8_t encryption_type) {
 }
 
 void log_wifi(Network const& network) {
-  String line = 
+  String line =
     network.ssid + " " +
-    "(" + encryption_type_string(network.encryption_type) + ") " + 
+    "(" + encryption_type_string(network.encryption_type) + ") " +
     "RSSI: " + network.rssi + " " +
     "CHANNEL: " + network.channel + " " +
     (network.is_hidden ? "HIDDEN!" : "");
@@ -456,7 +541,7 @@ void on_scan_complete(int found) {
       network.channel,
       network.is_hidden
     );
-    log_wifi(network);    
+    log_wifi(network);
   }
 
   WiFi.scanDelete();
@@ -464,13 +549,13 @@ void on_scan_complete(int found) {
 
 void control_decision(float& cur_temp, float& tgt_temp) {
   bool less_than = cur_temp < tgt_temp;
-    
+
   String decision;
   decision += String(cur_temp);
   decision += String(" is ") + (less_than ? "less than" : "greater than") + " ";
   decision += String(tgt_temp);
-  log(decision);  
-  
+  log(decision);
+
   set_relay(less_than);
 }
 
@@ -489,12 +574,12 @@ void process_offline() {
     }
     _last_wifi_scan = now;
   }
-  
+
   // Time to read from the sensor again
   if (period_elapsed(_last_checked_temp, now, PERIOD_CHECK_TEMP)) {
     float temp;
     auto valid_temp = process_conversion(now, _conversion_period, temp);
-    
+
     if (valid_temp) {
       _last_checked_temp = now;
       control_decision(temp, _storage.saved_temp);
@@ -511,7 +596,7 @@ void process_offline() {
     log("retry online");
     if (internet_settings_exist(_storage)) {
       log("internet settings exist");
-      to_online();    
+      to_online(now);
     } else {
       log("no internet settings");
     }
@@ -534,7 +619,7 @@ void init_pins() {
 void log_device_address(DeviceAddress& device_address) {
   char address[2 * sizeof(DeviceAddress) / sizeof(*device_address) + 1];
   sprintf(address, "%02X%02X%02X%02X%02X%02X%02X%02X",
-    device_address[0], device_address[1], device_address[2], device_address[3], 
+    device_address[0], device_address[1], device_address[2], device_address[3],
     device_address[4], device_address[5], device_address[6], device_address[7]);
   log(address);
 }
@@ -543,7 +628,7 @@ void init_sensors() {
   _sensor_interface.begin();
   _sensor_interface.setResolution(SENSOR_ADC_BITS);
   _sensor_interface.setWaitForConversion(false);
-  
+
   memset(_sensor_address, 0, sizeof(_sensor_address));
   for (auto i = 0; i < _sensor_interface.getDeviceCount(); ++i) {
     if (_sensor_interface.getAddress(_sensor_address, i)) {
@@ -569,9 +654,9 @@ void setup() {
   }
 
   if (internet_settings_exist(_storage)) {
-    to_online();
+    to_online(micros());
   } else {
-    to_offline();
+    to_offline(micros());
   }
 }
 
