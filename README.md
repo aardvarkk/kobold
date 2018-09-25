@@ -75,7 +75,8 @@ Ino build
 brew install node
 brew install typescript
 npm install --save @types/node
-
+npm install --save express
+npm install --save @types/express
 
 ### Ubuntu
 
@@ -83,11 +84,11 @@ curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
 sudo apt-get install gcc g++ make
 sudo apt-get install -y nodejs
 
-nginx
------
+# nginx
+
 vim /etc/nginx/nginx.conf
 
-WORKING SETUP:
+# Working Setup
 
 Board: Generic ESP8266 Module
 Flash Mode: DOUT <- DID NOT WORK OTHERWISE!!!

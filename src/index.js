@@ -1,15 +1,18 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-var http = require("http");
-var port = 3000;
-var requestHandler = function (request, response) {
-    console.log(request.url);
-    response.end('Hello Node.js Server!');
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
 };
-var server = http.createServer(requestHandler);
-server.listen(port, function (err) {
-    if (err) {
-        return console.log('something bad happened', err);
-    }
-    console.log("server is listening on " + port);
+Object.defineProperty(exports, "__esModule", { value: true });
+var express = __importStar(require("express"));
+var app = express.default();
+app.post('/', function (req, res) {
+    res.status(205);
+});
+var port = parseInt(process.env.PORT || "3000");
+app.listen(port, function () {
+    console.log("Listening at http://localhost:" + port + "/");
 });

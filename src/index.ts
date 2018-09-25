@@ -1,17 +1,12 @@
-import * as http from 'http'
-const port = 3000
+import * as express from 'express'
+const app: express.Application = express.default()
 
-const requestHandler = (request, response) => {
-  console.log(request.url)
-  response.end('Hello Node.js Server!')
-}
-
-const server = http.createServer(requestHandler)
-
-server.listen(port, (err) => {
-  if (err) {
-    return console.log('something bad happened', err)
-  }
-
-  console.log(`server is listening on ${port}`)
+app.post('/', function(req: express.Request, res: express.Response) {
+  res.status(205);
 })
+
+const port: number = parseInt(process.env.PORT || "3000")
+
+app.listen(port, () => {
+    console.log(`Listening at http://localhost:${port}/`)
+});
