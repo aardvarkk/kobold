@@ -84,6 +84,11 @@ curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
 sudo apt-get install gcc g++ make
 sudo apt-get install -y nodejs
 
+## Compiling
+
+tsc --watch
+node index.js
+
 # nginx
 
 vim /etc/nginx/nginx.conf
