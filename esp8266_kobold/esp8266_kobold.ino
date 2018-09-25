@@ -5,6 +5,12 @@
 #define ACTIVE   LOW
 #define INACTIVE HIGH
 
+// Allow Arduino OTA
+//#define OTA_ARDUINO
+
+// Allow Web Browser Update
+#define OTA_WEB_PUSH
+
 #define log(x) {     \
   Serial.println(x); \
   _log_history[_log_history_idx] = String(x); \
@@ -12,12 +18,18 @@
   _valid_log_history = min(_valid_log_history + 1, LOG_HISTORY_LENGTH); \
 }
 
+#ifdef OTA_ARDUINO
+#include <ArduinoOTA.h>
+#endif
+
 #include <assert.h>
 #include <DallasTemperature.h>
 #include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
+#include <ESP8266mDNS.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266HTTPUpdateServer.h>
 
 // CONSTANTS
 const bool     FORCE_OFFLINE = true;
@@ -36,6 +48,7 @@ const int      EEPROM_SIZE = 512;
 const float    DEFAULT_SETPOINT = 18.0;
 const uint8_t  SENSOR_ADC_BITS = 12;
 const char*    REPORT_URL = "http://www.google.ca/";
+const char*    UPDATE_HOST = "update";
 const char*    AP_SSID = "abcd";
 const char*    AP_PASSPHRASE = "thereisnospoon";
 const int      YIELD_DELAY_MS = 20;
@@ -90,6 +103,7 @@ OneWire           _one_wire_bus(PIN_ONE_WIRE);
 DallasTemperature _sensor_interface(&_one_wire_bus);
 DeviceAddress     _sensor_address;
 ESP8266WebServer  _server;
+ESP8266HTTPUpdateServer _update_server;
 String            _log_history[LOG_HISTORY_LENGTH];
 int               _log_history_idx = 0;
 int               _valid_log_history = 0;
@@ -368,6 +382,14 @@ String render_root() {
 
 void init_webserver(ESP8266WebServer& server) {
   log("init_webserver");
+
+  #ifdef OTA_WEB_PUSH
+  log("ota web push");
+  MDNS.begin(UPDATE_HOST);
+  _update_server.setup(&_server);
+  MDNS.addService("http", "tcp", 80);
+  #endif
+
   server.begin(SERVER_PORT);
 
   server.on("/", [&server]() {
@@ -697,7 +719,48 @@ void init_sensors() {
   reset_conversion();
 }
 
+#ifdef OTA_ARDUINO
+void init_ota() {
+  log("init_ota");
+
+  ArduinoOTA.onStart([]() {
+    log("ArduinoOTA.onStart");
+  });
+
+  ArduinoOTA.onEnd([]() {
+    log("ArduinoOTA.onEnd");
+  });
+
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    log("ArduinoOTA.onProgress");
+  });
+
+  ArduinoOTA.onError([](ota_error_t error) {
+    log("ArduinoOTA.onError");
+
+    if (error == OTA_AUTH_ERROR) {
+      log("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      log("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      log("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      log("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      log("End Failed");
+    }
+  });
+
+  ArduinoOTA.begin();
+}
+#endif
+
 void setup() {
+
+  #ifdef OTA_ARDUINO
+  init_ota();
+  #endif
+
   init_serial();
   init_pins();
   init_sensors();
@@ -715,6 +778,11 @@ void setup() {
 }
 
 void loop() {
+
+  #ifdef OTA_ARDUINO
+  ArduinoOTA.handle();
+  #endif
+
   switch (_mode) {
     case RunMode::ONLINE:
       process_online();

@@ -53,16 +53,22 @@ esptool.py (https://github.com/espressif/esptool)
 - `sudo pip install --upgrade pip`
 - `sudo pip install esptool`
 - `esptool.py -h`
-- `esptool.py -t
+- `esptool.py -t`
+- `export SONOFF_PORT=/dev/cu.SLAB_USBtoUART`
 - `esptool.py -p $SONOFF_PORT erase_flash`
 - `esptool.py -p $SONOFF_PORT write_flash 0x0 $SONOFF_BIN`
 - `--after no-reset` to stay in bootloader mode
 - `verify_flash` to check that values match
 - `esptool.py --chip esp8266 elf2image --out ./ /var/folders/rr/lyvlvm_d4573vc3r2ksk8x600000gn/T/arduino_build_770259/esp8266_blink.ino.elf`
 - `esptool.py -p $SONOFF_PORT write_flash 0x00000 0x00000.bin 0x01010 0x01010.bin`
+- `esptool.py -p $SONOFF_PORT run`
 
 Ino build
 - doesn't seem to find ESP8266 board info
+
+nginx
+-----
+vim /etc/nginx/nginx.conf
 
 WORKING SETUP:
 
