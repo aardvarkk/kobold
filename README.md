@@ -66,6 +66,23 @@ esptool.py (https://github.com/espressif/esptool)
 Ino build
 - doesn't seem to find ESP8266 board info
 
+# node
+
+## Install
+
+### macOS
+
+brew install node
+brew install typescript
+npm install --save @types/node
+
+
+### Ubuntu
+
+curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
+sudo apt-get install gcc g++ make
+sudo apt-get install -y nodejs
+
 nginx
 -----
 vim /etc/nginx/nginx.conf

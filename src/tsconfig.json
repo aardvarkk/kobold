@@ -1,0 +1,6 @@
+{
+    "compilerOptions": {
+        "target": "es5", // compile down to ES5
+        "lib": ["es6"] // support ES6 imports
+    }
+}

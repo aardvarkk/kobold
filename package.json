@@ -1,0 +1,25 @@
+{
+  "name": "kosi",
+  "version": "1.0.0",
+  "description": "ESP8266 SDK",
+  "main": "index.js",
+  "directories": {
+    "doc": "doc"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aardvarkk/kosi.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/aardvarkk/kosi/issues"
+  },
+  "homepage": "https://github.com/aardvarkk/kosi#readme",
+  "dependencies": {
+    "@types/node": "^10.11.0"
+  }
+}
