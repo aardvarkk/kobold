@@ -81,13 +81,21 @@ npm install --save @types/express
 ### Ubuntu
 
 curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
-sudo apt-get install gcc g++ make
-sudo apt-get install -y nodejs
+sudo apt-get install gcc g++ make build-essential nodejs
+
+### Add authorized SSH key
+ssh root@kosi.ca
+mkdir ~/.ssh
+cat ~/.ssh/id_rsa.pub | ssh root@kosi.ca ' cat >>.ssh/authorized_keys'
+
+## Add GitHub deploy key
 
 ## Compiling
 
 tsc --watch
-node index.js
+npm start
+
+## Running
 
 # nginx
 
