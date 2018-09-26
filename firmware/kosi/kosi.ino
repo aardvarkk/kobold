@@ -32,7 +32,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 
 // CONSTANTS
-const bool     FORCE_OFFLINE = true;
+const bool     FORCE_OFFLINE = false;
 const uint8_t  PIN_RELAY = 12;
 const uint8_t  PIN_LED = 13;
 const uint8_t  PIN_ONE_WIRE = 14;
@@ -47,7 +47,6 @@ const int      EEPROM_OFFSET = 0xF; // Had trouble reading address 1 after resta
 const int      EEPROM_SIZE = 512;
 const float    DEFAULT_SETPOINT = 18.0;
 const uint8_t  SENSOR_ADC_BITS = 12;
-const char*    REPORT_URL = "http://www.google.ca/";
 const char*    UPDATE_HOST = "update";
 const char*    AP_SSID = "abcd";
 const char*    AP_PASSPHRASE = "thereisnospoon";
@@ -56,6 +55,8 @@ const uint16_t SERVER_PORT = 80;
 const int      LOG_HISTORY_LENGTH = 0x20;
 const uint8_t  MAX_NETWORKS = 0x40;
 const bool     SCAN_FOR_HIDDEN = false;
+const int      REPORT_URL_MAX = 32;
+const char*    REPORT_URL_DEFAULT = "http://kosi:3000/";
 
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
 const unsigned long PERIOD_BLINK_OFF = 950000;
@@ -76,6 +77,7 @@ struct Storage {
   uint8_t version;
   char    ssid[SSID_MAX];
   char    passphrase[PASSPHRASE_MAX];
+  char    report_url[REPORT_URL_MAX];
   float   setpoint;
 };
 
@@ -205,6 +207,10 @@ void serialize_storage(Storage& storage, bool write) {
     serialize_char(storage.passphrase[i], address, write);
   }
 
+  for (auto i = 0; i < REPORT_URL_MAX; ++i) {
+    serialize_char(storage.report_url[i], address, write);
+  }
+
   serialize_float(storage.setpoint, address, write);
 
   if (write) {
@@ -242,6 +248,7 @@ void first_time_storage(Storage& storage) {
   memset(storage.ssid, 0, sizeof(storage.ssid));
   memset(storage.passphrase, 0, sizeof(storage.passphrase));
   storage.setpoint = DEFAULT_SETPOINT;
+  strcpy(storage.report_url, REPORT_URL_DEFAULT);
   serialize_storage(storage, true);
 }
 
@@ -368,11 +375,13 @@ String render_ssids(Network const* networks, uint8_t count) {
 String render_root() {
   String html;
 
-  html += "<html><head><title>Kobold</title></head><body><form method=\"post\" action=\"/settings\">";
+  html += "<html><head><title>kosi</title></head><body><form method=\"post\" action=\"/settings\">";
   html += "<fieldset><legend>SSID</legend>";
   html += render_ssids(_found_networks, _num_found_networks);
   html += "</fieldset>";
   html += "<fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
+  html += "<fieldset><legend>Report URL</legend><input type=\"url\" name=\"report-url\" value=\"";
+  html += String(_storage.report_url) + "\"/></fieldset>";
   html += "<fieldset><legend>Set Point</legend><input type=\"number\" value=\"";
   html += String(_storage.setpoint) + "\" step=\"0.1\" min=\"0.0\" max=\"25.0\" name=\"setpoint\"/></fieldset>";
   html += "<input type=\"submit\"/></form></body></html>";
@@ -400,7 +409,7 @@ void init_webserver(ESP8266WebServer& server) {
   server.on("/settings", HTTP_POST, [&server]() {
     log("/settings");
 
-    String ssid, password, setpoint;
+    String ssid, password, report_url, setpoint;
 
     for (int i = 0; i < server.args(); ++i) {
       auto name = server.argName(i);
@@ -420,10 +429,19 @@ void init_webserver(ESP8266WebServer& server) {
       if (name == "setpoint") {
         setpoint = val;
       }
+
+      if (name == "report-url") {
+        report_url = val;
+      }
     }
 
     if (ssid.length() && password.length()) {
       update_internet_settings(ssid, password);
+    }
+
+    if (report_url.length()) {
+      strcpy(_storage.report_url, report_url.c_str());
+      serialize_storage(_storage, true);
     }
 
     if (setpoint.length()) {
@@ -458,8 +476,19 @@ void to_offline(unsigned long now) {
   set_mode(RunMode::OFFLINE);
 }
 
-int report_temperature(float temp, String& response) {
+String json_request(float temp) {
+  String json;
+  json += "{";
+  json += "\"temp\":";
+  json += String(temp);
+  json += "}";
+  log(json);
+  return json;
+}
+
+int report_temperature(String const& report_url, float temp, String& response) {
   log("report_temperature");
+  log(report_url);
   log(temp);
 
   int code = -1;
@@ -467,9 +496,10 @@ int report_temperature(float temp, String& response) {
   digitalWrite(PIN_LED, ACTIVE);
 
   HTTPClient client;
-  auto success = client.begin(REPORT_URL);
+  auto success = client.begin(report_url);
   if (success) {
-    code = client.GET();
+    client.addHeader("Content-Type", "application/json");
+    code = client.POST(json_request(temp));
     log(code);
     if (code < 0) {
       log("http request failed");
@@ -500,7 +530,7 @@ void process_online() {
       _last_checked_temp = now;
 
       String response;
-      auto code = report_temperature(temp, response);
+      auto code = report_temperature(_storage.report_url, temp, response);
       if (code < 0) {
         to_offline(now);
       } else {
@@ -519,7 +549,7 @@ void process_online() {
             break;
           default:
             log("unrecognized code");
-            code = -1;
+            to_offline(now);
             break;
         }
       }

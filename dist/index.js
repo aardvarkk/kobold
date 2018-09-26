@@ -8,9 +8,13 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 var express = __importStar(require("express"));
+var bodyParser = __importStar(require("body-parser"));
 var app = express.default();
+app.use(bodyParser.json());
 app.post('/', function (req, res) {
     // TODO: Determine if/when to send reset response
+    console.log("Received report");
+    console.log(req.body);
     res.status(205).end();
 });
 var port = parseInt(process.env.PORT || "3000");
