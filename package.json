@@ -21,7 +21,6 @@
   },
   "homepage": "https://github.com/aardvarkk/kosi#readme",
   "dependencies": {
-    "bcrypt-nodejs": "0.0.3",
     "express": "^4.16.3"
   },
   "devDependencies": {
