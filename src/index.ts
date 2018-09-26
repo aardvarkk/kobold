@@ -3,7 +3,7 @@ const app: express.Application = express.default()
 
 app.post('/', function(req: express.Request, res: express.Response) {
   // TODO: Determine if/when to send reset response
-  res.status(205);
+  res.status(205).end();
 })
 
 const port: number = parseInt(process.env.PORT || "3000")
