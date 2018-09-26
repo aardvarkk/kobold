@@ -2,6 +2,7 @@ import * as express from 'express'
 const app: express.Application = express.default()
 
 app.post('/', function(req: express.Request, res: express.Response) {
+  // TODO: Determine if/when to send reset response
   res.status(205);
 })
 

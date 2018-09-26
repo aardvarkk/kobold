@@ -7,7 +7,8 @@
     "doc": "doc"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node dist/index.js",
+    "test": "mocha"
   },
   "repository": {
     "type": "git",
@@ -20,8 +21,11 @@
   },
   "homepage": "https://github.com/aardvarkk/kosi#readme",
   "dependencies": {
+    "express": "^4.16.3"
+  },
+  "devDependencies": {
     "@types/express": "^4.16.0",
     "@types/node": "^10.11.0",
-    "express": "^4.16.3"
+    "mocha": "^5.2.0"
   }
 }

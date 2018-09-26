@@ -10,6 +10,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var express = __importStar(require("express"));
 var app = express.default();
 app.post('/', function (req, res) {
+    // TODO: Determine if/when to send reset response
     res.status(205);
 });
 var port = parseInt(process.env.PORT || "3000");
