@@ -32,7 +32,15 @@
 #include <ESP8266HTTPUpdateServer.h>
 
 // CONSTANTS
+const char*    KEY    = "D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX"; // BURN IN (use first AP_KEY_CHARS characters for internal SSID)
+const char*    SECRET = "NEqaSnzcX-rWRFGhZXoFEro8e-EwGK8J"; // BURN IN (use first AP_SECRET_CHARS characters for internal password)
+
 const bool     FORCE_OFFLINE = false;
+const char*    UPDATE_HOST = "kosi"; // http://kosi.local/update
+String         AP_PREPEND  = "kosi-";
+const char*    REPORT_URL_DEFAULT = "http://kosi.ca/";
+const int      AP_KEY_CHARS    = 6;
+const int      AP_SECRET_CHARS = 8;
 const uint8_t  PIN_RELAY = 12;
 const uint8_t  PIN_LED = 13;
 const uint8_t  PIN_ONE_WIRE = 14;
@@ -42,21 +50,17 @@ const int      MAGIC_SIZE = 4;
 const char     MAGIC[MAGIC_SIZE] = { 'K', 'B', 'L', 'D' };
 const uint8_t  VERSION = 1;
 const int      SSID_MAX = 32;
-const int      PASSPHRASE_MAX = 64;
+const int      PASSWORD_MAX = 64;
 const int      EEPROM_OFFSET = 0xF; // Had trouble reading address 1 after restart, so offset from start a bit
 const int      EEPROM_SIZE = 512;
 const float    DEFAULT_SETPOINT = 18.0;
 const uint8_t  SENSOR_ADC_BITS = 12;
-const char*    UPDATE_HOST = "update";
-const char*    AP_SSID = "abcd";
-const char*    AP_PASSPHRASE = "thereisnospoon";
 const int      YIELD_DELAY_MS = 20;
 const uint16_t SERVER_PORT = 80;
 const int      LOG_HISTORY_LENGTH = 0x20;
 const uint8_t  MAX_NETWORKS = 0x40;
 const bool     SCAN_FOR_HIDDEN = false;
 const int      REPORT_URL_MAX = 32;
-const char*    REPORT_URL_DEFAULT = "http://kosi:3000/";
 
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
 const unsigned long PERIOD_BLINK_OFF = 950000;
@@ -74,10 +78,17 @@ enum class RunMode {
 
 struct Storage {
   char    magic[MAGIC_SIZE];
+
   uint8_t version;
-  char    ssid[SSID_MAX];
-  char    passphrase[PASSPHRASE_MAX];
+
+  char    ssid_internal[SSID_MAX];
+  char    password_internal[PASSWORD_MAX];
+
+  char    ssid_external[SSID_MAX];
+  char    password_external[PASSWORD_MAX];
+
   char    report_url[REPORT_URL_MAX];
+
   float   setpoint;
 };
 
@@ -124,16 +135,7 @@ void yield_delay() {
 }
 
 bool internet_settings_exist(Storage const& storage) {
-  return storage.ssid[0] != 0;
-}
-
-void update_internet_settings(
-  String const& ssid,
-  String const& passphrase
-) {
-  ssid.toCharArray(_storage.ssid, SSID_MAX);
-  passphrase.toCharArray(_storage.passphrase, PASSPHRASE_MAX);
-  serialize_storage(_storage, true);
+  return storage.ssid_external[0] != 0;
 }
 
 // Read/write a single uint8_t value
@@ -200,11 +202,19 @@ void serialize_storage(Storage& storage, bool write) {
   serialize_uint8_t(storage.version, address, write);
 
   for (auto i = 0; i < SSID_MAX; ++i) {
-    serialize_char(storage.ssid[i], address, write);
+    serialize_char(storage.ssid_internal[i], address, write);
   }
 
-  for (auto i = 0; i < PASSPHRASE_MAX; ++i) {
-    serialize_char(storage.passphrase[i], address, write);
+  for (auto i = 0; i < PASSWORD_MAX; ++i) {
+    serialize_char(storage.password_internal[i], address, write);
+  }
+
+  for (auto i = 0; i < SSID_MAX; ++i) {
+    serialize_char(storage.ssid_external[i], address, write);
+  }
+
+  for (auto i = 0; i < PASSWORD_MAX; ++i) {
+    serialize_char(storage.password_external[i], address, write);
   }
 
   for (auto i = 0; i < REPORT_URL_MAX; ++i) {
@@ -216,9 +226,6 @@ void serialize_storage(Storage& storage, bool write) {
   if (write) {
     log("end");
     EEPROM.end();
-  } else {
-    log("setpoint");
-    log(storage.setpoint);
   }
 }
 
@@ -245,10 +252,23 @@ void first_time_storage(Storage& storage) {
     storage.magic[i] = MAGIC[i];
   }
   storage.version = VERSION;
-  memset(storage.ssid, 0, sizeof(storage.ssid));
-  memset(storage.passphrase, 0, sizeof(storage.passphrase));
-  storage.setpoint = DEFAULT_SETPOINT;
+
+  // Set internal SSID and password to be based on key and secret
+  memset(storage.ssid_internal, 0, SSID_MAX);
+  memcpy(storage.ssid_internal, AP_PREPEND.c_str(), AP_PREPEND.length());
+  memcpy(storage.ssid_internal + AP_PREPEND.length(), KEY, AP_KEY_CHARS);
+
+  memset(storage.password_internal, 0,      PASSWORD_MAX);
+  memcpy(storage.password_internal, SECRET, AP_SECRET_CHARS);
+
+  // Set blank external SSID
+  memset(storage.ssid_external, 0, SSID_MAX);
+  memset(storage.password_external, 0, PASSWORD_MAX);
+
   strcpy(storage.report_url, REPORT_URL_DEFAULT);
+
+  storage.setpoint = DEFAULT_SETPOINT;
+
   serialize_storage(storage, true);
 }
 
@@ -280,13 +300,13 @@ String wifi_status(int code) {
   }
 }
 
-bool init_sta(char const* ssid, char const* passphrase) {
+bool init_sta(char const* ssid, char const* password) {
   log("init_sta");
   log(ssid);
-  log(passphrase);
+  log(password);
 
   WiFi.mode(WIFI_STA);
-  auto status = WiFi.begin(ssid, passphrase);
+  auto status = WiFi.begin(ssid, password);
 
   while (status == WL_DISCONNECTED) {
     yield_delay();
@@ -319,7 +339,7 @@ void to_online(unsigned long now) {
     deinit_ap();
     deinit_webserver();
 
-    if (init_sta(_storage.ssid, _storage.passphrase)) {
+    if (init_sta(_storage.ssid_external, _storage.password_external)) {
       set_mode(RunMode::ONLINE);
     } else {
       to_offline(now);
@@ -327,11 +347,11 @@ void to_online(unsigned long now) {
   }
 }
 
-void init_ap() {
+void init_ap(const char* ssid, const char* password) {
   log("init_ap");
   log(WiFi.mode(WIFI_AP_STA));
 
-  if (WiFi.softAP(AP_SSID, AP_PASSPHRASE)) {
+  if (WiFi.softAP(ssid, password)) {
     log("init_ap success");
   } else {
     log("init_ap failure");
@@ -352,7 +372,7 @@ String get_log_contents() {
 
 String render_ssid(Network const& network) {
   String ssid;
-  ssid += "<div><input type=\"radio\" name=\"ssid\" id=\"";
+  ssid += "<div><input type=\"radio\" name=\"ssid-external\" id=\"";
   ssid += network.ssid;
   ssid += "\" value=\"";
   ssid += network.ssid;
@@ -376,10 +396,14 @@ String render_root() {
   String html;
 
   html += "<html><head><title>kosi</title></head><body><form method=\"post\" action=\"/settings\">";
-  html += "<fieldset><legend>SSID</legend>";
+  html += "<fieldset><legend>Internal SSID</legend><input type=\"text\" name=\"ssid-internal\" value=\"";
+  html += String(_storage.ssid_internal).substring(AP_PREPEND.length()) + "\"/></fieldset>";
+  html += "<fieldset><legend>Internal Password</legend><input type=\"password\" name=\"password-internal\" value=\"";
+  html += String(_storage.password_internal) + "\"/></fieldset>";
+  html += "<fieldset><legend>External SSID</legend>";
   html += render_ssids(_found_networks, _num_found_networks);
   html += "</fieldset>";
-  html += "<fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
+  html += "<fieldset><legend>External Password</legend><input type=\"password\" name=\"password-external\"/></fieldset>";
   html += "<fieldset><legend>Report URL</legend><input type=\"url\" name=\"report-url\" value=\"";
   html += String(_storage.report_url) + "\"/></fieldset>";
   html += "<fieldset><legend>Set Point</legend><input type=\"number\" value=\"";
@@ -409,7 +433,9 @@ void init_webserver(ESP8266WebServer& server) {
   server.on("/settings", HTTP_POST, [&server]() {
     log("/settings");
 
-    String ssid, password, report_url, setpoint;
+    String ssid_internal, password_internal;
+    String ssid_external, password_external;
+    String report_url, setpoint;
 
     for (int i = 0; i < server.args(); ++i) {
       auto name = server.argName(i);
@@ -418,12 +444,20 @@ void init_webserver(ESP8266WebServer& server) {
       log(name);
       log(val);
 
-      if (name == "ssid") {
-        ssid = val;
+      if (name == "ssid-internal") {
+        ssid_internal = val;
       }
 
-      if (name == "password") {
-        password = val;
+      if (name == "password-internal") {
+        password_internal = val;
+      }
+
+      if (name == "ssid-external") {
+        ssid_external = val;
+      }
+
+      if (name == "password-external") {
+        password_external = val;
       }
 
       if (name == "setpoint") {
@@ -435,8 +469,22 @@ void init_webserver(ESP8266WebServer& server) {
       }
     }
 
-    if (ssid.length() && password.length()) {
-      update_internet_settings(ssid, password);
+    if (ssid_internal.length() && password_internal.length()) {
+      ssid_internal = AP_PREPEND + ssid_internal;
+      // Only save these values if they're different (so we don't reboot for nothing!)
+      if (ssid_internal     != String(_storage.ssid_internal) ||
+          password_internal != String(_storage.password_internal)) {
+        ssid_internal.toCharArray(_storage.ssid_internal, SSID_MAX);
+        password_internal.toCharArray(_storage.password_internal, PASSWORD_MAX);
+        serialize_storage(_storage, true);
+        to_offline(micros());
+      }
+    }
+
+    if (ssid_external.length() && password_external.length()) {
+      ssid_external.toCharArray(_storage.ssid_external, SSID_MAX);
+      password_external.toCharArray(_storage.password_external, PASSWORD_MAX);
+      serialize_storage(_storage, true);
     }
 
     if (report_url.length()) {
@@ -470,7 +518,7 @@ void to_offline(unsigned long now) {
   reset_timers(now);
   set_blink(true, now);
 
-  init_ap();
+  init_ap(_storage.ssid_internal, _storage.password_internal);
   init_webserver(_server);
 
   set_mode(RunMode::OFFLINE);
