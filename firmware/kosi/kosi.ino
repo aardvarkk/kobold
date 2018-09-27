@@ -32,13 +32,13 @@
 #include <ESP8266HTTPUpdateServer.h>
 
 // CONSTANTS
-const char*    KEY    = "D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX"; // BURN IN (use first AP_KEY_CHARS characters for internal SSID)
-const char*    SECRET = "NEqaSnzcX-rWRFGhZXoFEro8e-EwGK8J"; // BURN IN (use first AP_SECRET_CHARS characters for internal password)
+String         KEY    = "D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX"; // BURN IN (use first AP_KEY_CHARS characters for internal SSID)
+String         SECRET = "NEqaSnzcX-rWRFGhZXoFEro8e-EwGK8J"; // BURN IN (use first AP_SECRET_CHARS characters for internal password)
 
 const bool     FORCE_OFFLINE = false;
-const char*    UPDATE_HOST = "kosi"; // http://kosi.local/update
+String         UPDATE_HOST = "kosi"; // http://kosi.local/update
 String         AP_PREPEND  = "kosi-";
-const char*    REPORT_URL_DEFAULT = "http://kosi.ca/";
+String         REPORT_URL_DEFAULT = "http://kosi.ca/";
 const int      AP_KEY_CHARS    = 6;
 const int      AP_SECRET_CHARS = 8;
 const uint8_t  PIN_RELAY = 12;
@@ -49,9 +49,6 @@ const SerialConfig SERIAL_CONFIG = SERIAL_8N1;
 const int      MAGIC_SIZE = 4;
 const char     MAGIC[MAGIC_SIZE] = { 'K', 'B', 'L', 'D' };
 const uint8_t  VERSION = 1;
-const int      SSID_MAX = 32;
-const int      PASSWORD_MAX = 64;
-const int      EEPROM_OFFSET = 0xF; // Had trouble reading address 1 after restart, so offset from start a bit
 const int      EEPROM_SIZE = 512;
 const float    DEFAULT_SETPOINT = 18.0;
 const uint8_t  SENSOR_ADC_BITS = 12;
@@ -60,7 +57,6 @@ const uint16_t SERVER_PORT = 80;
 const int      LOG_HISTORY_LENGTH = 0x20;
 const uint8_t  MAX_NETWORKS = 0x40;
 const bool     SCAN_FOR_HIDDEN = false;
-const int      REPORT_URL_MAX = 32;
 
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
 const unsigned long PERIOD_BLINK_OFF = 950000;
@@ -81,13 +77,15 @@ struct Storage {
 
   uint8_t version;
 
-  char    ssid_internal[SSID_MAX];
-  char    password_internal[PASSWORD_MAX];
+  String  ssid_internal;
+  String  password_internal;
 
-  char    ssid_external[SSID_MAX];
-  char    password_external[PASSWORD_MAX];
+  String  ssid_external;
+  String  password_external;
 
-  char    report_url[REPORT_URL_MAX];
+  String  report_url;
+
+  String  token;
 
   float   setpoint;
 };
@@ -140,17 +138,42 @@ bool internet_settings_exist(Storage const& storage) {
 
 // Read/write a single uint8_t value
 void serialize_uint8_t(uint8_t& val, int& address, bool write) {
-  //  log("serialize_uint8_t");
-  //  log(address);
+//  log("serialize_uint8_t");
+//  log(address);
   assert(sizeof(val) == sizeof(uint8_t));
   if (write) {
-    //    log(val);
-    EEPROM.write(val, address);
+    EEPROM.write(address, val);
+//    log(val);
   } else {
     val = EEPROM.read(address);
-    //    log(val);
+//    log(val);
   }
   address += sizeof(val);
+}
+
+// Read/write a string
+void serialize_string(String& val, int& address, bool write) {
+  log("serialize_string");
+  if (write) {
+    uint8_t len = static_cast<uint8_t>(val.length());
+    log(len);
+    log(val);
+    serialize_uint8_t(len, address, write);
+    for (auto i = 0; i < val.length(); ++i) {
+      serialize_char(val[i], address, write);
+    }
+  } else {
+    uint8_t len;
+    serialize_uint8_t(len, address, write);
+    log(len);
+    val = "";
+    for (auto i = 0; i < len; ++i) {
+      char c;
+      serialize_char(c, address, write);
+      val += c;
+    }
+    log(val);
+  }
 }
 
 // Read/write a single char value
@@ -159,8 +182,8 @@ void serialize_char(char& val, int& address, bool write) {
 //  log(address);
   assert(sizeof(val) == sizeof(uint8_t));
   if (write) {
-//    log(val);
     EEPROM.write(address, val);
+//    log(val);
   } else {
     val = EEPROM.read(address);
 //    log(val);
@@ -170,71 +193,57 @@ void serialize_char(char& val, int& address, bool write) {
 
 // Read/write a single float value
 void serialize_float(float& val, int& address, bool write) {
-  assert(sizeof(val) == 4 * sizeof(uint8_t));
   if (write) {
-    for (auto i = 0; i < 4; ++i) {
-      EEPROM.write(address, static_cast<uint8_t>(static_cast<uint32_t>(val) >> (8 * sizeof(uint8_t) * i)));
-      address += sizeof(uint8_t);
-    }
+    EEPROM.put(address, val);
   } else {
-    uint32_t val_temp = 0;
-    for (auto i = 0; i < 4; ++i) {
-      val_temp |= EEPROM.read(address) << (8 * sizeof(uint8_t) * i);
-      address += sizeof(uint8_t);
-    }
-    val = static_cast<float>(val_temp);
+    EEPROM.get(address, val);
   }
+  address += sizeof(val);
 }
 
 // Serialize the entirety of EEPROM to/from Storage
-void serialize_storage(Storage& storage, bool write) {
+bool serialize_storage(Storage& storage, bool write) {
   log("serialize_storage");
   log(write);
 
+  log("begin");
   EEPROM.begin(EEPROM_SIZE);
 
-  int address = EEPROM_OFFSET;
+  int address = 0;
 
   for (auto i = 0; i < MAGIC_SIZE; ++i) {
     serialize_char(storage.magic[i], address, write);
   }
 
+  if (!write && !magic_match(_storage)) {
+    log("end");
+    EEPROM.end();
+    return false;
+  }
+
   serialize_uint8_t(storage.version, address, write);
 
-  for (auto i = 0; i < SSID_MAX; ++i) {
-    serialize_char(storage.ssid_internal[i], address, write);
-  }
-
-  for (auto i = 0; i < PASSWORD_MAX; ++i) {
-    serialize_char(storage.password_internal[i], address, write);
-  }
-
-  for (auto i = 0; i < SSID_MAX; ++i) {
-    serialize_char(storage.ssid_external[i], address, write);
-  }
-
-  for (auto i = 0; i < PASSWORD_MAX; ++i) {
-    serialize_char(storage.password_external[i], address, write);
-  }
-
-  for (auto i = 0; i < REPORT_URL_MAX; ++i) {
-    serialize_char(storage.report_url[i], address, write);
-  }
+  serialize_string(storage.ssid_internal, address, write);
+  serialize_string(storage.password_internal, address, write);
+  serialize_string(storage.ssid_external, address, write);
+  serialize_string(storage.password_external, address, write);
+  serialize_string(storage.report_url, address, write);
+  serialize_string(storage.token, address, write);
 
   serialize_float(storage.setpoint, address, write);
 
-  if (write) {
-    log("end");
-    EEPROM.end();
-  }
+  log("end");
+  EEPROM.end();
+
+  return true;
 }
 
 bool magic_match(Storage const& storage) {
   log("magic_match");
 
   for (auto i = 0; i < MAGIC_SIZE; ++i) {
-//    log(storage.magic[i]);
-//    log(MAGIC[i]);
+    log(storage.magic[i]);
+    log(MAGIC[i]);
     if (storage.magic[i] != MAGIC[i]) {
       log("no match!");
       return false;
@@ -254,18 +263,15 @@ void first_time_storage(Storage& storage) {
   storage.version = VERSION;
 
   // Set internal SSID and password to be based on key and secret
-  memset(storage.ssid_internal, 0, SSID_MAX);
-  memcpy(storage.ssid_internal, AP_PREPEND.c_str(), AP_PREPEND.length());
-  memcpy(storage.ssid_internal + AP_PREPEND.length(), KEY, AP_KEY_CHARS);
+  storage.ssid_internal     = AP_PREPEND + KEY.substring(0, AP_KEY_CHARS);
+  storage.password_internal = SECRET.substring(0, AP_SECRET_CHARS);
 
-  memset(storage.password_internal, 0,      PASSWORD_MAX);
-  memcpy(storage.password_internal, SECRET, AP_SECRET_CHARS);
+  storage.ssid_external = "";
+  storage.password_external = "";
 
-  // Set blank external SSID
-  memset(storage.ssid_external, 0, SSID_MAX);
-  memset(storage.password_external, 0, PASSWORD_MAX);
+  storage.report_url = REPORT_URL_DEFAULT;
 
-  strcpy(storage.report_url, REPORT_URL_DEFAULT);
+  storage.token = "";
 
   storage.setpoint = DEFAULT_SETPOINT;
 
@@ -300,13 +306,13 @@ String wifi_status(int code) {
   }
 }
 
-bool init_sta(char const* ssid, char const* password) {
+bool init_sta(String const& ssid, String const& password) {
   log("init_sta");
   log(ssid);
   log(password);
 
   WiFi.mode(WIFI_STA);
-  auto status = WiFi.begin(ssid, password);
+  auto status = WiFi.begin(ssid.c_str(), password.c_str());
 
   while (status == WL_DISCONNECTED) {
     yield_delay();
@@ -347,11 +353,11 @@ void to_online(unsigned long now) {
   }
 }
 
-void init_ap(const char* ssid, const char* password) {
+void init_ap(String const& ssid, String const& password) {
   log("init_ap");
   log(WiFi.mode(WIFI_AP_STA));
 
-  if (WiFi.softAP(ssid, password)) {
+  if (WiFi.softAP(ssid.c_str(), password.c_str())) {
     log("init_ap success");
   } else {
     log("init_ap failure");
@@ -418,7 +424,7 @@ void init_webserver(ESP8266WebServer& server) {
 
   #ifdef OTA_WEB_PUSH
   log("ota web push");
-  MDNS.begin(UPDATE_HOST);
+  MDNS.begin(UPDATE_HOST.c_str());
   _update_server.setup(&_server);
   MDNS.addService("http", "tcp", 80);
   #endif
@@ -472,23 +478,22 @@ void init_webserver(ESP8266WebServer& server) {
     if (ssid_internal.length() && password_internal.length()) {
       ssid_internal = AP_PREPEND + ssid_internal;
       // Only save these values if they're different (so we don't reboot for nothing!)
-      if (ssid_internal     != String(_storage.ssid_internal) ||
-          password_internal != String(_storage.password_internal)) {
-        ssid_internal.toCharArray(_storage.ssid_internal, SSID_MAX);
-        password_internal.toCharArray(_storage.password_internal, PASSWORD_MAX);
+      if (ssid_internal     != _storage.ssid_internal || password_internal != _storage.password_internal) {
+        _storage.ssid_internal = ssid_internal;
+        _storage.password_internal = password_internal;
         serialize_storage(_storage, true);
         to_offline(micros());
       }
     }
 
     if (ssid_external.length() && password_external.length()) {
-      ssid_external.toCharArray(_storage.ssid_external, SSID_MAX);
-      password_external.toCharArray(_storage.password_external, PASSWORD_MAX);
+      _storage.ssid_external = ssid_external;
+      _storage.password_external = password_external;
       serialize_storage(_storage, true);
     }
 
     if (report_url.length()) {
-      strcpy(_storage.report_url, report_url.c_str());
+      _storage.report_url = report_url;
       serialize_storage(_storage, true);
     }
 
@@ -524,7 +529,7 @@ void to_offline(unsigned long now) {
   set_mode(RunMode::OFFLINE);
 }
 
-String json_request(float temp) {
+String report_json(float temp) {
   String json;
   json += "{";
   json += "\"temp\":";
@@ -547,7 +552,7 @@ int report_temperature(String const& report_url, float temp, String& response) {
   auto success = client.begin(report_url);
   if (success) {
     client.addHeader("Content-Type", "application/json");
-    code = client.POST(json_request(temp));
+    code = client.POST(report_json(temp));
     log(code);
     if (code < 0) {
       log("http request failed");
@@ -834,7 +839,6 @@ void init_ota() {
 #endif
 
 void setup() {
-
   #ifdef OTA_ARDUINO
   init_ota();
   #endif
@@ -842,9 +846,9 @@ void setup() {
   init_serial();
   init_pins();
   init_sensors();
-  serialize_storage(_storage, false);
 
-  if (!magic_match(_storage)) {
+  bool match = serialize_storage(_storage, false);
+  if (!match) {
     first_time_storage(_storage);
   }
 
