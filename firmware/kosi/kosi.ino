@@ -22,7 +22,6 @@
 #include <ArduinoOTA.h>
 #endif
 
-#include <assert.h>
 #include <DallasTemperature.h>
 #include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
@@ -61,8 +60,7 @@ const bool     SCAN_FOR_HIDDEN = false;
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
 const unsigned long PERIOD_BLINK_OFF = 950000;
 const unsigned long PERIOD_BLINK_ON  =  50000;
-//const unsigned long PERIOD_CHECK_TEMP = 5e6; // 5e6 = 5 seconds
-const unsigned long PERIOD_CHECK_TEMP = 3e7; // 3e7 = 30 seconds
+const unsigned long PERIOD_CHECK_TEMP = 1e7; // 1e7 = 10 seconds
 //const unsigned long PERIOD_CHECK_TEMP = 3e8; // 3e8 = 5 minutes
 const unsigned long PERIOD_RETRY_ONLINE = 6e7; // 6e7 = 1 minute
 
@@ -140,7 +138,6 @@ bool internet_settings_exist(Storage const& storage) {
 void serialize_uint8_t(uint8_t& val, int& address, bool write) {
 //  log("serialize_uint8_t");
 //  log(address);
-  assert(sizeof(val) == sizeof(uint8_t));
   if (write) {
     EEPROM.write(address, val);
 //    log(val);
@@ -153,11 +150,11 @@ void serialize_uint8_t(uint8_t& val, int& address, bool write) {
 
 // Read/write a string
 void serialize_string(String& val, int& address, bool write) {
-  log("serialize_string");
+//  log("serialize_string");
   if (write) {
     uint8_t len = static_cast<uint8_t>(val.length());
-    log(len);
-    log(val);
+//    log(len);
+//    log(val);
     serialize_uint8_t(len, address, write);
     for (auto i = 0; i < val.length(); ++i) {
       serialize_char(val[i], address, write);
@@ -165,14 +162,14 @@ void serialize_string(String& val, int& address, bool write) {
   } else {
     uint8_t len;
     serialize_uint8_t(len, address, write);
-    log(len);
+//    log(len);
     val = "";
     for (auto i = 0; i < len; ++i) {
       char c;
       serialize_char(c, address, write);
       val += c;
     }
-    log(val);
+//    log(val);
   }
 }
 
@@ -180,7 +177,6 @@ void serialize_string(String& val, int& address, bool write) {
 void serialize_char(char& val, int& address, bool write) {
 //  log("serialize_char");
 //  log(address);
-  assert(sizeof(val) == sizeof(uint8_t));
   if (write) {
     EEPROM.write(address, val);
 //    log(val);
@@ -539,7 +535,13 @@ String report_json(float temp) {
   return json;
 }
 
-int report_temperature(String const& report_url, float temp, String& response) {
+int report_temperature(
+  String const& report_url,
+  String const& token,
+  float temp,
+  String& response
+  )
+{
   log("report_temperature");
   log(report_url);
   log(temp);
@@ -551,6 +553,7 @@ int report_temperature(String const& report_url, float temp, String& response) {
   HTTPClient client;
   auto success = client.begin(report_url);
   if (success) {
+    client.addHeader("Authorization", String("Bearer ") + token);
     client.addHeader("Content-Type", "application/json");
     code = client.POST(report_json(temp));
     log(code);
@@ -560,6 +563,47 @@ int report_temperature(String const& report_url, float temp, String& response) {
     } else {
       log("http request succeeded");
       response = client.getString();
+    }
+  } else {
+    log("failed to start HTTP client");
+  }
+
+  digitalWrite(PIN_LED, INACTIVE);
+
+  client.end();
+  return code;
+}
+
+int refresh_token(
+  String const& url,
+  String const& username,
+  String const& password,
+  String& token
+  )
+{
+  log("refresh_token");
+  log(url);
+//  log(username);
+//  log(password);
+
+  int code = -1;
+  token = "";
+
+  digitalWrite(PIN_LED, ACTIVE);
+
+  HTTPClient client;
+  auto success = client.begin(url);
+  if (success) {
+    client.setAuthorization(username.c_str(), password.c_str());
+    code = client.POST("");
+    log(code);
+    if (code < 0) {
+      log("http request failed");
+      log(HTTPClient::errorToString(code));
+    } else {
+      log("http request succeeded");
+      token = client.getString();
+      log(token);
     }
   } else {
     log("failed to start HTTP client");
@@ -583,7 +627,7 @@ void process_online() {
       _last_checked_temp = now;
 
       String response;
-      auto code = report_temperature(_storage.report_url, temp, response);
+      auto code = report_temperature(_storage.report_url, _storage.token, temp, response);
       if (code < 0) {
         to_offline(now);
       } else {
@@ -599,6 +643,17 @@ void process_online() {
           case 205:
             log("manual disconnect request");
             to_offline(now);
+            break;
+          case 401:
+            log("bad token!");
+            code = refresh_token(_storage.report_url + "token", KEY, SECRET, _storage.token);
+            if (code == 200) {
+              log("successfully retrieved new token!");
+              log(_storage.token);
+              serialize_storage(_storage, true);
+            } else {
+              log("failed to retrieve new token!");
+            }
             break;
           default:
             log("unrecognized code");

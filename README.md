@@ -81,7 +81,7 @@ npm install --save @types/express
 ### Ubuntu
 
 curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
-sudo apt-get install gcc g++ make build-essential nodejs
+sudo apt-get install gcc g++ make nodejs
 
 ### Add authorized SSH key
 ssh root@kosi.ca
