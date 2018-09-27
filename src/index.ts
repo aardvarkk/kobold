@@ -1,8 +1,8 @@
-import * as express from 'express'
-import * as bodyParser from 'body-parser'
-import * as basicAuth from 'basic-auth'
+import express from 'express'
+import bodyParser from 'body-parser'
+import basicAuth from 'basic-auth'
 
-const app: express.Application = express.default()
+const app: express.Application = express()
 
 app.use(bodyParser.json());
 
@@ -18,7 +18,7 @@ app.post('/', function(req: express.Request, res: express.Response) {
 
 app.post('/token', function(req: express.Request, res: express.Response) {
   console.log("Token request")
-  const auth = basicAuth.parse(req.get("Authorization") || "")
+  const auth = basicAuth(req)
   if (auth) {
     console.log(`Username: ${auth.name}, Password: ${auth.pass}`)
     res.send("abc123")
