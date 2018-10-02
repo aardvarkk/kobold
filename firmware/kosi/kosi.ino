@@ -1,4 +1,5 @@
-// DEFINES
+#pragma region defines
+
 #define REQUIRESALARMS false
 
 // Active LOW (both LED and relay)
@@ -18,6 +19,10 @@
   _valid_log_history = min(_valid_log_history + 1, LOG_HISTORY_LENGTH); \
 }
 
+#pragma endregion
+
+#pragma region includes
+
 #ifdef OTA_ARDUINO
 #include <ArduinoOTA.h>
 #endif
@@ -29,6 +34,10 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
+
+#pragma endregion
+
+#pragma region constants
 
 // CONSTANTS
 String         KEY    = "D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX"; // BURN IN (use first AP_KEY_CHARS characters for internal SSID)
@@ -64,7 +73,10 @@ const unsigned long PERIOD_CHECK_TEMP = 1e7; // 1e7 = 10 seconds
 //const unsigned long PERIOD_CHECK_TEMP = 3e8; // 3e8 = 5 minutes
 const unsigned long PERIOD_RETRY_ONLINE = 6e7; // 6e7 = 1 minute
 
-// TYPES
+#pragma endregion
+
+#pragma region types
+
 enum class RunMode {
   OFFLINE,
   ONLINE
@@ -72,19 +84,19 @@ enum class RunMode {
 
 struct Storage {
   char    magic[MAGIC_SIZE];
-
+  
   uint8_t version;
 
   String  ssid_internal;
   String  password_internal;
-
+  
   String  ssid_external;
   String  password_external;
-
+  
   String  report_url;
 
   String  token;
-
+  
   float   setpoint;
 };
 
@@ -97,7 +109,10 @@ struct Network {
   bool     is_hidden;
 };
 
-// GLOBAL VARIABLES
+#pragma endregion
+
+#pragma region globals
+
 RunMode           _mode;
 Storage           _storage;
 unsigned long     _last_wifi_scan;
@@ -118,6 +133,8 @@ int               _log_history_idx = 0;
 int               _valid_log_history = 0;
 uint8_t           _num_found_networks = 0;
 Network           _found_networks[MAX_NETWORKS];
+
+#pragma endregion
 
 void reset_timers(unsigned long now) {
   log("reset_timers");
@@ -168,7 +185,7 @@ void serialize_string(String& val, int& address, bool write) {
       char c;
       serialize_char(c, address, write);
       val += c;
-    }
+    }      
 //    log(val);
   }
 }
@@ -216,7 +233,7 @@ bool serialize_storage(Storage& storage, bool write) {
     EEPROM.end();
     return false;
   }
-
+  
   serialize_uint8_t(storage.version, address, write);
 
   serialize_string(storage.ssid_internal, address, write);
@@ -264,13 +281,13 @@ void first_time_storage(Storage& storage) {
 
   storage.ssid_external = "";
   storage.password_external = "";
-
+  
   storage.report_url = REPORT_URL_DEFAULT;
 
   storage.token = "";
-
+  
   storage.setpoint = DEFAULT_SETPOINT;
-
+  
   serialize_storage(storage, true);
 }
 
@@ -342,7 +359,7 @@ void to_online(unsigned long now) {
     deinit_webserver();
 
     if (init_sta(_storage.ssid_external, _storage.password_external)) {
-      set_mode(RunMode::ONLINE);
+      set_mode(RunMode::ONLINE);        
     } else {
       to_offline(now);
     }
@@ -400,8 +417,8 @@ String render_root() {
   html += "<html><head><title>kosi</title></head><body><form method=\"post\" action=\"/settings\">";
   html += "<fieldset><legend>Internal SSID</legend><input type=\"text\" name=\"ssid-internal\" value=\"";
   html += String(_storage.ssid_internal).substring(AP_PREPEND.length()) + "\"/></fieldset>";
-  html += "<fieldset><legend>Internal Password</legend><input type=\"password\" name=\"password-internal\" value=\"";
-  html += String(_storage.password_internal) + "\"/></fieldset>";
+//  html += "<fieldset><legend>Internal Password</legend><input type=\"password\" name=\"password-internal\" value=\"";
+//  html += String(_storage.password_internal) + "\"/></fieldset>";
   html += "<fieldset><legend>External SSID</legend>";
   html += render_ssids(_found_networks, _num_found_networks);
   html += "</fieldset>";
@@ -410,7 +427,10 @@ String render_root() {
   html += String(_storage.report_url) + "\"/></fieldset>";
   html += "<fieldset><legend>Set Point</legend><input type=\"number\" value=\"";
   html += String(_storage.setpoint) + "\" step=\"0.1\" min=\"0.0\" max=\"25.0\" name=\"setpoint\"/></fieldset>";
-  html += "<input type=\"submit\"/></form></body></html>";
+  html += "<input type=\"submit\"/></form>"
+  html += "<div>Key: <pre>" + KEY + "</pre></div>";
+  html += "<div>Secret: <pre>" + SECRET + "</pre></div>";
+  html += "</body></html>";
 
   return html;
 }
@@ -435,7 +455,7 @@ void init_webserver(ESP8266WebServer& server) {
   server.on("/settings", HTTP_POST, [&server]() {
     log("/settings");
 
-    String ssid_internal, password_internal;
+    String ssid_internal;//, password_internal;
     String ssid_external, password_external;
     String report_url, setpoint;
 
@@ -450,9 +470,9 @@ void init_webserver(ESP8266WebServer& server) {
         ssid_internal = val;
       }
 
-      if (name == "password-internal") {
-        password_internal = val;
-      }
+//      if (name == "password-internal") {
+//        password_internal = val;
+//      }
 
       if (name == "ssid-external") {
         ssid_external = val;
@@ -471,12 +491,12 @@ void init_webserver(ESP8266WebServer& server) {
       }
     }
 
-    if (ssid_internal.length() && password_internal.length()) {
+    if (ssid_internal.length()/* && password_internal.length()*/) {
       ssid_internal = AP_PREPEND + ssid_internal;
       // Only save these values if they're different (so we don't reboot for nothing!)
-      if (ssid_internal     != _storage.ssid_internal || password_internal != _storage.password_internal) {
+      if (ssid_internal     != _storage.ssid_internal/* || password_internal != _storage.password_internal*/) {
         _storage.ssid_internal = ssid_internal;
-        _storage.password_internal = password_internal;
+//        _storage.password_internal = password_internal;
         serialize_storage(_storage, true);
         to_offline(micros());
       }
@@ -492,7 +512,7 @@ void init_webserver(ESP8266WebServer& server) {
       _storage.report_url = report_url;
       serialize_storage(_storage, true);
     }
-
+    
     if (setpoint.length()) {
       _storage.setpoint = setpoint.toFloat();
       serialize_storage(_storage, true);
@@ -532,16 +552,10 @@ String report_json(float temp) {
   json += String(temp);
   json += "}";
   log(json);
-  return json;
+  return json;  
 }
 
-int report_temperature(
-  String const& report_url,
-  String const& token,
-  float temp,
-  String& response
-  )
-{
+int report_temperature(String const& report_url, String const& token, float temp, String& response) {
   log("report_temperature");
   log(report_url);
   log(temp);
@@ -565,7 +579,7 @@ int report_temperature(
       response = client.getString();
     }
   } else {
-    log("failed to start HTTP client");
+    log("failed starting http client");
   }
 
   digitalWrite(PIN_LED, INACTIVE);
@@ -574,18 +588,12 @@ int report_temperature(
   return code;
 }
 
-int refresh_token(
-  String const& url,
-  String const& username,
-  String const& password,
-  String& token
-  )
-{
+int refresh_token(String const& url, String const& username, String const& password, String& token) {
   log("refresh_token");
   log(url);
 //  log(username);
 //  log(password);
-
+  
   int code = -1;
   token = "";
 
@@ -654,6 +662,10 @@ void process_online() {
             } else {
               log("failed to retrieve new token!");
             }
+            break;
+          case 403:
+            log("no account");
+            to_offline(now);
             break;
           default:
             log("unrecognized code");
@@ -901,7 +913,7 @@ void setup() {
   init_serial();
   init_pins();
   init_sensors();
-
+  
   bool match = serialize_storage(_storage, false);
   if (!match) {
     first_time_storage(_storage);

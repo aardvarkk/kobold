@@ -5,28 +5,6 @@ ESP8266 SDK
 https://www.letscontrolit.com/wiki/index.php/Basics:_Connecting_and_flashing_the_ESP8266
 http://esp32.net/usb-uart/
 
-https://docs.influxdata.com/influxdb/v1.3/introduction/getting_started/
-https://docs.influxdata.com/influxdb/v1.3/query_language/data_exploration/
-
-```
-brew install influxdb
-brew services start influxdb
-curl "http://localhost:8086/query?q=show+databases"
-influx -precision rfc3339
-CREATE DATABASE kobold
-SHOW DATABASES
-USE kobold
-INSERT readings,sensor=287AA6A807000029 temperature=21.56,voltage=3.29
-curl -i -XPOST 'http://localhost:8086/write?db=kobold' --data-binary 'readings,sensor=287AA6A807000029 temperature=21.56',voltage=3.29
-SELECT * FROM readings
-SELECT * FROM readings WHERE sensor = '287AA6A807000029'
-SELECT * FROM readings WHERE sensor = '287AA6A807000029' AND time >= now() - 1d
-curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=kobold" --data-urlencode "q=SELECT * FROM readings WHERE sensor = '287AA6A807000029' AND time >= now() - 1d"
-exit
-```
-
-`pg_dump -s kobold > schema.psql`
-
 Sonoff Setup
 
 - macOS High Sierra (10.13.2)
@@ -65,6 +43,23 @@ esptool.py (https://github.com/espressif/esptool)
 
 Ino build
 - doesn't seem to find ESP8266 board info
+
+# Response Codes
+
+200 Success: cool
+201 Created: heat
+205 Reset Content: go offline
+401 Unauthorized: bad token
+403 Forbidden: no account linked
+
+# Database
+
+## Create Database
+
+createdb kosi
+psql kosi
+CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL);
+CREATE TABLE devices (id BIGSERIAL PRIMARY KEY, key TEXT NOT NULL, secret TEXT NOT NULL, token TEXT);
 
 # node
 
