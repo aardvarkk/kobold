@@ -10,3 +10,4 @@ void serialize_char(char& val, int& address, bool write);
 void serialize_float(float& val, int& address, bool write);
 bool serialize_storage(Storage& storage, bool write);
 void first_time_storage(Storage& storage);
+bool internet_settings_exist(Storage const& storage);

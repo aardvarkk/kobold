@@ -127,3 +127,7 @@ void first_time_storage(Storage& storage) {
   
   serialize_storage(storage, true);
 }
+
+bool internet_settings_exist(Storage const& storage) {
+  return storage.ssid_external[0] != 0;
+}

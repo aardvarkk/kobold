@@ -11,3 +11,11 @@ String get_log_contents() {
   }
   return contents;
 }
+
+void log_device_address(DeviceAddress& device_address) {
+  char address[2 * sizeof(DeviceAddress) / sizeof(*device_address) + 1];
+  sprintf(address, "%02X%02X%02X%02X%02X%02X%02X%02X",
+    device_address[0], device_address[1], device_address[2], device_address[3],
+    device_address[4], device_address[5], device_address[6], device_address[7]);
+  _l(address);
+}

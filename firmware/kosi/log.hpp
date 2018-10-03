@@ -10,3 +10,4 @@
 }
 
 String get_log_contents();
+void log_device_address(DeviceAddress& device_address);

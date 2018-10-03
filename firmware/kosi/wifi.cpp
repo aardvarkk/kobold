@@ -58,3 +58,48 @@ void init_ap(String const& ssid, String const& password) {
     _l("init_ap failure");
   }
 }
+
+void log_wifi(Network const& network) {
+  String line =
+    network.ssid + " " +
+    "(" + encryption_type_string(network.encryption_type) + ") " +
+    "RSSI: " + network.rssi + " " +
+    "CHANNEL: " + network.channel + " " +
+    (network.is_hidden ? "HIDDEN!" : "");
+  _l(line);
+}
+
+// Callback for networks being found
+void on_scan_complete(int found) {
+  _l("on_scan_complete");
+
+  _num_found_networks = found;
+  _l(_num_found_networks);
+
+  for (int i = 0; i < _num_found_networks; ++i) {
+    Network& network = _found_networks[i];
+    WiFi.getNetworkInfo(
+      i,
+      network.ssid,
+      network.encryption_type,
+      network.rssi,
+      network.bssid,
+      network.channel,
+      network.is_hidden
+    );
+    log_wifi(network);
+  }
+
+  WiFi.scanDelete();
+}
+
+String encryption_type_string(uint8_t encryption_type) {
+  switch (encryption_type) {
+    case ENC_TYPE_WEP:  return "WEP";
+    case ENC_TYPE_TKIP: return "TKIP";
+    case ENC_TYPE_CCMP: return "CCMP";
+    case ENC_TYPE_NONE: return "NONE";
+    case ENC_TYPE_AUTO: return "AUTO";
+    default: return "UNKNOWN";
+  }
+}
