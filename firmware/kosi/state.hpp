@@ -5,7 +5,5 @@
 void set_mode(RunMode mode);
 void to_offline(unsigned long now);
 void to_online(unsigned long now);
-void reset_timers(unsigned long now);
-bool period_elapsed(unsigned long last_occurrence, unsigned long now, unsigned long period);
 void process_online();
 void process_offline();

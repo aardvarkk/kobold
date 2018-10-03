@@ -1,7 +1,7 @@
 #include "sensors.hpp"
 #include "log.hpp"
 #include "globals.hpp"
-#include "state.hpp"
+#include "timers.hpp"
 
 void init_sensors() {
   _sensor_interface.begin();
