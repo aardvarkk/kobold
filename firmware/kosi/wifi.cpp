@@ -3,25 +3,6 @@
 #include "wifi.hpp"
 #include "timers.hpp"
 
-void deinit_ap() {
-  _l("deinit_ap");
-  WiFi.softAPdisconnect(true);
-}
-
-String wifi_status(int code) {
-  switch (code) {
-    case WL_NO_SHIELD:       return "WL_NO_SHIELD";
-    case WL_IDLE_STATUS:     return "WL_IDLE_STATUS";
-    case WL_NO_SSID_AVAIL:   return "WL_NO_SSID_AVAIL";
-    case WL_SCAN_COMPLETED:  return "WL_SCAN_COMPLETED";
-    case WL_CONNECTED:       return "WL_CONNECTED";
-    case WL_CONNECT_FAILED:  return "WL_CONNECT_FAILED";
-    case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
-    case WL_DISCONNECTED:    return "WL_DISCONNECTED";
-    default:                 return "UNKNOWN";
-  }
-}
-
 bool init_sta(String const& ssid, String const& password) {
   _l("init_sta");
   _l(ssid);
@@ -59,6 +40,11 @@ void init_ap(String const& ssid, String const& password) {
   }
 }
 
+void deinit_ap() {
+  _l("deinit_ap");
+  WiFi.softAPdisconnect(true);
+}
+
 // Callback for networks being found
 void on_scan_complete(int found) {
   _l("on_scan_complete");
@@ -81,6 +67,20 @@ void on_scan_complete(int found) {
   }
 
   WiFi.scanDelete();
+}
+
+String wifi_status(int code) {
+  switch (code) {
+    case WL_NO_SHIELD:       return "WL_NO_SHIELD";
+    case WL_IDLE_STATUS:     return "WL_IDLE_STATUS";
+    case WL_NO_SSID_AVAIL:   return "WL_NO_SSID_AVAIL";
+    case WL_SCAN_COMPLETED:  return "WL_SCAN_COMPLETED";
+    case WL_CONNECTED:       return "WL_CONNECTED";
+    case WL_CONNECT_FAILED:  return "WL_CONNECT_FAILED";
+    case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
+    case WL_DISCONNECTED:    return "WL_DISCONNECTED";
+    default:                 return "UNKNOWN";
+  }
 }
 
 String encryption_type_string(uint8_t encryption_type) {
