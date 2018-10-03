@@ -1,6 +1,6 @@
-#include "constants.h"
-#include "globals.h"
-#include "webserver.h"
+#include "constants.hpp"
+#include "globals.hpp"
+#include "webserver.hpp"
 
 String render_ssid(Network const& network) {
   String ssid;

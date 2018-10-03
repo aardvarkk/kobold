@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Arduino.h"
+#include <Arduino.h>
 
 // BURN IN
 const String KEY    = "D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX"; // BURN IN (use first AP_KEY_CHARS characters for internal SSID)

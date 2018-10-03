@@ -6,24 +6,19 @@
 // Allow Web Browser Update
 #define OTA_WEB_PUSH
 
-#define log(x) {     \
-  Serial.println(x); \
-  _log_history[_log_history_idx] = String(x); \
-  _log_history_idx = (_log_history_idx + 1) % LOG_HISTORY_LENGTH; \
-  _valid_log_history = min(_valid_log_history + 1, LOG_HISTORY_LENGTH); \
-}
-
 #ifdef OTA_ARDUINO
 #include <ArduinoOTA.h>
 #endif
 
-#include "constants.h"
-#include "globals.h"
-#include "webserver.h"
-#include "wifi.h"
+#include "constants.hpp"
+#include "globals.hpp"
+#include "log.hpp"
+#include "serialize.hpp"
+#include "webserver.hpp"
+#include "wifi.hpp"
 
 void reset_timers(unsigned long now) {
-  log("reset_timers");
+  _l("reset_timers");
   _last_wifi_scan     = now - PERIOD_WIFI_SCAN;
   _last_checked_temp  = now - PERIOD_CHECK_TEMP;
   _latest_user_action = now;
@@ -37,125 +32,9 @@ bool internet_settings_exist(Storage const& storage) {
   return storage.ssid_external[0] != 0;
 }
 
-// Read/write a single uint8_t value
-void serialize_uint8_t(uint8_t& val, int& address, bool write) {
-//  log("serialize_uint8_t");
-//  log(address);
-  if (write) {
-    EEPROM.write(address, val);
-//    log(val);
-  } else {
-    val = EEPROM.read(address);
-//    log(val);
-  }
-  address += sizeof(val);
-}
-
-// Read/write a string
-void serialize_string(String& val, int& address, bool write) {
-//  log("serialize_string");
-  if (write) {
-    uint8_t len = static_cast<uint8_t>(val.length());
-//    log(len);
-//    log(val);
-    serialize_uint8_t(len, address, write);
-    for (auto i = 0; i < val.length(); ++i) {
-      serialize_char(val[i], address, write);
-    }
-  } else {
-    uint8_t len;
-    serialize_uint8_t(len, address, write);
-//    log(len);
-    val = "";
-    for (auto i = 0; i < len; ++i) {
-      char c;
-      serialize_char(c, address, write);
-      val += c;
-    }      
-//    log(val);
-  }
-}
-
-// Read/write a single char value
-void serialize_char(char& val, int& address, bool write) {
-//  log("serialize_char");
-//  log(address);
-  if (write) {
-    EEPROM.write(address, val);
-//    log(val);
-  } else {
-    val = EEPROM.read(address);
-//    log(val);
-  }
-  address += sizeof(val);
-}
-
-// Read/write a single float value
-void serialize_float(float& val, int& address, bool write) {
-  if (write) {
-    EEPROM.put(address, val);
-  } else {
-    EEPROM.get(address, val);
-  }
-  address += sizeof(val);
-}
-
-// Serialize the entirety of EEPROM to/from Storage
-bool serialize_storage(Storage& storage, bool write) {
-  log("serialize_storage");
-  log(write);
-
-  log("begin");
-  EEPROM.begin(EEPROM_SIZE);
-
-  int address = 0;
-
-  for (auto i = 0; i < MAGIC_SIZE; ++i) {
-    serialize_char(storage.magic[i], address, write);
-  }
-
-  if (!write && !magic_match(_storage)) {
-    log("end");
-    EEPROM.end();
-    return false;
-  }
-  
-  serialize_uint8_t(storage.version, address, write);
-
-  serialize_string(storage.ssid_internal, address, write);
-  serialize_string(storage.password_internal, address, write);
-  serialize_string(storage.ssid_external, address, write);
-  serialize_string(storage.password_external, address, write);
-  serialize_string(storage.report_url, address, write);
-  serialize_string(storage.token, address, write);
-
-  serialize_float(storage.setpoint, address, write);
-
-  log("end");
-  EEPROM.end();
-
-  return true;
-}
-
-bool magic_match(Storage const& storage) {
-  log("magic_match");
-
-  for (auto i = 0; i < MAGIC_SIZE; ++i) {
-    log(storage.magic[i]);
-    log(MAGIC[i]);
-    if (storage.magic[i] != MAGIC[i]) {
-      log("no match!");
-      return false;
-    }
-  }
-
-  log("matched!");
-  return true;
-}
-
 // Set up and save to storage the initial settings for the device
 void first_time_storage(Storage& storage) {
-  log("first_time_storage");
+  _l("first_time_storage");
   for (auto i = 0; i < MAGIC_SIZE; ++i) {
     storage.magic[i] = MAGIC[i];
   }
@@ -178,12 +57,12 @@ void first_time_storage(Storage& storage) {
 }
 
 void deinit_ap() {
-  log("deinit_ap");
+  _l("deinit_ap");
   WiFi.softAPdisconnect(true);
 }
 
 void deinit_webserver() {
-  log("deinit_webserver");
+  _l("deinit_webserver");
   _server.close();
 }
 
@@ -206,9 +85,9 @@ String wifi_status(int code) {
 }
 
 bool init_sta(String const& ssid, String const& password) {
-  log("init_sta");
-  log(ssid);
-  log(password);
+  _l("init_sta");
+  _l(ssid);
+  _l(password);
 
   WiFi.mode(WIFI_STA);
   auto status = WiFi.begin(ssid.c_str(), password.c_str());
@@ -218,24 +97,24 @@ bool init_sta(String const& ssid, String const& password) {
     status = WiFi.status();
   }
 
-  log("got status");
-  log(status);
-  log(wifi_status(status));
+  _l("got status");
+  _l(status);
+  _l(wifi_status(status));
 
   if (status == WL_CONNECTED) {
-    log("init_sta success");
+    _l("init_sta success");
     return true;
   } else {
-    log("init_sta failure");
+    _l("init_sta failure");
     return false;
   }
 }
 
 void to_online(unsigned long now) {
-  log("to_online");
+  _l("to_online");
 
   if (FORCE_OFFLINE) {
-    log("force_offline");
+    _l("force_offline");
     to_offline(now);
   } else {
     reset_timers(now);
@@ -253,13 +132,13 @@ void to_online(unsigned long now) {
 }
 
 void init_ap(String const& ssid, String const& password) {
-  log("init_ap");
-  log(WiFi.mode(WIFI_AP_STA));
+  _l("init_ap");
+  _l(WiFi.mode(WIFI_AP_STA));
 
   if (WiFi.softAP(ssid.c_str(), password.c_str())) {
-    log("init_ap success");
+    _l("init_ap success");
   } else {
-    log("init_ap failure");
+    _l("init_ap failure");
   }
 }
 
@@ -276,10 +155,10 @@ String get_log_contents() {
 }
 
 void init_webserver(ESP8266WebServer& server) {
-  log("init_webserver");
+  _l("init_webserver");
 
   #ifdef OTA_WEB_PUSH
-  log("ota web push");
+  _l("ota web push");
   MDNS.begin(UPDATE_HOST.c_str());
   _update_server.setup(&_server);
   MDNS.addService("http", "tcp", 80);
@@ -288,12 +167,12 @@ void init_webserver(ESP8266WebServer& server) {
   server.begin(SERVER_PORT);
 
   server.on("/", [&server]() {
-    log("/");
+    _l("/");
     server.send(200, "text/html", render_root());
   });
 
   server.on("/settings", HTTP_POST, [&server]() {
-    log("/settings");
+    _l("/settings");
 
     String ssid_internal;//, password_internal;
     String ssid_external, password_external;
@@ -303,8 +182,8 @@ void init_webserver(ESP8266WebServer& server) {
       auto name = server.argName(i);
       auto val  = server.arg(i);
 
-      log(name);
-      log(val);
+      _l(name);
+      _l(val);
 
       if (name == "ssid-internal") {
         ssid_internal = val;
@@ -362,19 +241,19 @@ void init_webserver(ESP8266WebServer& server) {
   });
 
   server.on("/logs", [&server]() {
-    log("/logs");
+    _l("/logs");
     server.send(200, "text/plain", get_log_contents());
   });
 
   server.on("/reset", [&server]() {
-    log("/reset");
+    _l("/reset");
     first_time_storage(_storage);
     server.send(200);
   });
 }
 
 void to_offline(unsigned long now) {
-  log("to_offline");
+  _l("to_offline");
 
   reset_timers(now);
   set_blink(true, now);
@@ -391,14 +270,14 @@ String report_json(float temp) {
   json += "\"temp\":";
   json += String(temp);
   json += "}";
-  log(json);
+  _l(json);
   return json;  
 }
 
 int report_temperature(String const& report_url, String const& token, float temp, String& response) {
-  log("report_temperature");
-  log(report_url);
-  log(temp);
+  _l("report_temperature");
+  _l(report_url);
+  _l(temp);
 
   int code = -1;
 
@@ -410,16 +289,16 @@ int report_temperature(String const& report_url, String const& token, float temp
     client.addHeader("Authorization", String("Bearer ") + token);
     client.addHeader("Content-Type", "application/json");
     code = client.POST(report_json(temp));
-    log(code);
+    _l(code);
     if (code < 0) {
-      log("http request failed");
-      log(HTTPClient::errorToString(code));
+      _l("http request failed");
+      _l(HTTPClient::errorToString(code));
     } else {
-      log("http request succeeded");
+      _l("http request succeeded");
       response = client.getString();
     }
   } else {
-    log("failed starting http client");
+    _l("failed starting http client");
   }
 
   digitalWrite(PIN_LED, INACTIVE);
@@ -429,10 +308,10 @@ int report_temperature(String const& report_url, String const& token, float temp
 }
 
 int refresh_token(String const& url, String const& username, String const& password, String& token) {
-  log("refresh_token");
-  log(url);
-//  log(username);
-//  log(password);
+  _l("refresh_token");
+  _l(url);
+//  _l(username);
+//  _l(password);
   
   int code = -1;
   token = "";
@@ -444,17 +323,17 @@ int refresh_token(String const& url, String const& username, String const& passw
   if (success) {
     client.setAuthorization(username.c_str(), password.c_str());
     code = client.POST("");
-    log(code);
+    _l(code);
     if (code < 0) {
-      log("http request failed");
-      log(HTTPClient::errorToString(code));
+      _l("http request failed");
+      _l(HTTPClient::errorToString(code));
     } else {
-      log("http request succeeded");
+      _l("http request succeeded");
       token = client.getString();
-      log(token);
+      _l(token);
     }
   } else {
-    log("failed to start HTTP client");
+    _l("failed to start HTTP client");
   }
 
   digitalWrite(PIN_LED, INACTIVE);
@@ -481,34 +360,34 @@ void process_online() {
       } else {
         switch (code) {
           case 200:
-            log("cool");
+            _l("cool");
             set_relay(false);
             break;
           case 201:
-            log("heat");
+            _l("heat");
             set_relay(true);
             break;
           case 205:
-            log("manual disconnect request");
+            _l("manual disconnect request");
             to_offline(now);
             break;
           case 401:
-            log("bad token!");
+            _l("bad token!");
             code = refresh_token(_storage.report_url + "token", KEY, SECRET, _storage.token);
             if (code == 200) {
-              log("successfully retrieved new token!");
-              log(_storage.token);
+              _l("successfully retrieved new token!");
+              _l(_storage.token);
               serialize_storage(_storage, true);
             } else {
-              log("failed to retrieve new token!");
+              _l("failed to retrieve new token!");
             }
             break;
           case 403:
-            log("no account");
+            _l("no account");
             to_offline(now);
             break;
           default:
-            log("unrecognized code");
+            _l("unrecognized code");
             to_offline(now);
             break;
         }
@@ -524,9 +403,9 @@ bool period_elapsed(unsigned long last_occurrence, unsigned long now, unsigned l
 
 // Enable or disable the relay
 void set_relay(bool enabled) {
-//  log("set_relay");
-//  log(enabled);
-  log(enabled ? "relay ON" : "relay OFF");
+//  _l("set_relay");
+//  _l(enabled);
+  _l(enabled ? "relay ON" : "relay OFF");
   digitalWrite(PIN_RELAY, enabled ? ACTIVE : INACTIVE);
 }
 
@@ -549,17 +428,17 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
       reset_conversion();
 
       if (_sensor_interface.isConversionComplete()) {
-        log("conversion complete");
+        _l("conversion complete");
         temp = _sensor_interface.getTempC(_sensor_address);
         return true;
       } else {
-        log("conversion incomplete");
+        _l("conversion incomplete");
       }
     }
   }
   // We haven't yet started conversion
   else {
-    log("requestTemperatures");
+    _l("requestTemperatures");
     _sensor_interface.requestTemperatures();
     _last_started_temp_req = now;
     _started_temp_req = true;
@@ -586,15 +465,15 @@ void log_wifi(Network const& network) {
     "RSSI: " + network.rssi + " " +
     "CHANNEL: " + network.channel + " " +
     (network.is_hidden ? "HIDDEN!" : "");
-  log(line);
+  _l(line);
 }
 
 // Callback for networks being found
 void on_scan_complete(int found) {
-  log("on_scan_complete");
+  _l("on_scan_complete");
 
   _num_found_networks = found;
-  log(_num_found_networks);
+  _l(_num_found_networks);
 
   for (int i = 0; i < _num_found_networks; ++i) {
     Network& network = _found_networks[i];
@@ -620,7 +499,7 @@ void control_decision(float& cur_temp, float& tgt_temp) {
   decision += String(cur_temp);
   decision += String(" is ") + (less_than ? "less than" : "greater than") + " ";
   decision += String(tgt_temp);
-  log(decision);
+  _l(decision);
 
   set_relay(less_than);
 }
@@ -635,7 +514,7 @@ void process_offline() {
   if (period_elapsed(_last_wifi_scan, now, PERIOD_WIFI_SCAN)) {
     auto status = WiFi.scanComplete();
     if (status == WIFI_SCAN_FAILED) {
-      log("scanning wifi");
+      _l("scanning wifi");
       WiFi.scanNetworksAsync(on_scan_complete, SCAN_FOR_HIDDEN);
     }
     _last_wifi_scan = now;
@@ -659,12 +538,12 @@ void process_offline() {
 
   // To retry online again
   if (period_elapsed(_latest_user_action, now, PERIOD_RETRY_ONLINE)) {
-    log("retry online");
+    _l("retry online");
     if (internet_settings_exist(_storage) && !FORCE_OFFLINE) {
-      log("internet settings exist");
+      _l("internet settings exist");
       to_online(now);
     } else {
-      log("no internet settings");
+      _l("no internet settings");
     }
     _latest_user_action = now;
   }
@@ -676,7 +555,7 @@ void init_serial() {
 }
 
 void init_pins() {
-  log("init_pins");
+  _l("init_pins");
   pinMode(PIN_LED,      OUTPUT);
   pinMode(PIN_RELAY,    OUTPUT);
   pinMode(PIN_ONE_WIRE, INPUT);
@@ -687,7 +566,7 @@ void log_device_address(DeviceAddress& device_address) {
   sprintf(address, "%02X%02X%02X%02X%02X%02X%02X%02X",
     device_address[0], device_address[1], device_address[2], device_address[3],
     device_address[4], device_address[5], device_address[6], device_address[7]);
-  log(address);
+  _l(address);
 }
 
 void init_sensors() {
@@ -698,10 +577,10 @@ void init_sensors() {
   memset(_sensor_address, 0, sizeof(_sensor_address));
   for (auto i = 0; i < _sensor_interface.getDeviceCount(); ++i) {
     if (_sensor_interface.getAddress(_sensor_address, i)) {
-      log("temperature address found");
+      _l("temperature address found");
       log_device_address(_sensor_address);
     } else {
-      log("temperature address not found")
+      _l("temperature address not found")
     }
   }
 
@@ -711,33 +590,33 @@ void init_sensors() {
 
 #ifdef OTA_ARDUINO
 void init_ota() {
-  log("init_ota");
+  _l("init_ota");
 
   ArduinoOTA.onStart([]() {
-    log("ArduinoOTA.onStart");
+    _l("ArduinoOTA.onStart");
   });
 
   ArduinoOTA.onEnd([]() {
-    log("ArduinoOTA.onEnd");
+    _l("ArduinoOTA.onEnd");
   });
 
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    log("ArduinoOTA.onProgress");
+    _l("ArduinoOTA.onProgress");
   });
 
   ArduinoOTA.onError([](ota_error_t error) {
-    log("ArduinoOTA.onError");
+    _l("ArduinoOTA.onError");
 
     if (error == OTA_AUTH_ERROR) {
-      log("Auth Failed");
+      _l("Auth Failed");
     } else if (error == OTA_BEGIN_ERROR) {
-      log("Begin Failed");
+      _l("Begin Failed");
     } else if (error == OTA_CONNECT_ERROR) {
-      log("Connect Failed");
+      _l("Connect Failed");
     } else if (error == OTA_RECEIVE_ERROR) {
-      log("Receive Failed");
+      _l("Receive Failed");
     } else if (error == OTA_END_ERROR) {
-      log("End Failed");
+      _l("End Failed");
     }
   });
 

@@ -1,5 +1,5 @@
-#include "constants.h"
-#include "globals.h"
+#include "constants.hpp"
+#include "globals.hpp"
 
 RunMode           _mode;
 Storage           _storage;

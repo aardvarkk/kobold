@@ -1,14 +1,13 @@
 #pragma once
 
 #include <DallasTemperature.h>
-#include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
 
-#include "types.h"
+#include "types.hpp"
 
 extern RunMode           _mode;
 extern Storage           _storage;
