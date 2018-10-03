@@ -2,7 +2,7 @@
 
 #include "log.hpp"
 #include "magic.hpp"
-#include "serialize.hpp"
+#include "storage.hpp"
 
 // Read/write a single uint8_t value
 void serialize_uint8_t(uint8_t& val, int& address, bool write) {
@@ -102,4 +102,28 @@ bool serialize_storage(Storage& storage, bool write) {
   EEPROM.end();
 
   return true;
+}
+
+// Set up and save to storage the initial settings for the device
+void first_time_storage(Storage& storage) {
+  _l("first_time_storage");
+  for (auto i = 0; i < MAGIC_SIZE; ++i) {
+    storage.magic[i] = MAGIC[i];
+  }
+  storage.version = VERSION;
+
+  // Set internal SSID and password to be based on key and secret
+  storage.ssid_internal     = AP_PREPEND + KEY.substring(0, AP_KEY_CHARS);
+  storage.password_internal = SECRET.substring(0, AP_SECRET_CHARS);
+
+  storage.ssid_external = "";
+  storage.password_external = "";
+  
+  storage.report_url = REPORT_URL_DEFAULT;
+
+  storage.token = "";
+  
+  storage.setpoint = DEFAULT_SETPOINT;
+  
+  serialize_storage(storage, true);
 }
