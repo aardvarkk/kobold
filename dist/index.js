@@ -40,103 +40,127 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 var express_1 = __importDefault(require("express"));
 var body_parser_1 = __importDefault(require("body-parser"));
-var basic_auth_1 = __importDefault(require("basic-auth"));
 var pgp = require('pg-promise')();
 var db = pgp(process.env.DATABASE_URL || "postgresql://localhost/kosi");
 var app = express_1.default();
 app.use(body_parser_1.default.json());
-app.post('/', function (req, res) {
-    console.log("Received report");
-    console.log("Auth: " + req.get("Authorization"));
-    console.log(req.body);
-    // TODO: Return 200 if cool
-    // TODO: Return 201 if heat
-    // TODO: Return 401 if bad token
-    // TODO: Return 403 if unlinked
-    // TODO: Return 405 if reset requested
-    res.status(401).end();
-});
-var grantDeviceToken = function (deviceId) {
+var recordTemperature = function (userDeviceId, temperature) {
     return __awaiter(this, void 0, void 0, function () {
-        var data, e_1;
+        return __generator(this, function (_a) {
+            db.none("\n    INSERT INTO reports (user_device_id, temperature)\n    VALUES ($1, $2)\n  ", [userDeviceId, temperature]);
+            return [2 /*return*/];
+        });
+    });
+};
+var deviceInstruction = function (temperature) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            if (temperature < 18.0) {
+                return [2 /*return*/, 201];
+            }
+            else {
+                return [2 /*return*/, 200];
+            }
+            return [2 /*return*/];
+        });
+    });
+};
+app.post('/', function (req, res) {
+    return __awaiter(this, void 0, void 0, function () {
+        var auth, token, userDevice, code;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    console.log("grantDeviceToken");
-                    _a.label = 1;
+                    console.log("Received report");
+                    console.log(req.body);
+                    auth = (req.get("Authorization") || "").split(' ');
+                    token = auth[1];
+                    return [4 /*yield*/, db.oneOrNone("\n    SELECT id\n    FROM user_devices\n    WHERE token = $1\n  ", [token])
+                        // Asynchronously record the temperature
+                    ];
                 case 1:
-                    _a.trys.push([1, 3, , 4]);
-                    return [4 /*yield*/, db.oneOrNone("\n      UPDATE devices \n      SET token = encode(digest(concat(now(), random()), 'sha256'), 'hex')\n      WHERE id = $1\n      RETURNING token\n    ", [deviceId])];
+                    userDevice = _a.sent();
+                    // Asynchronously record the temperature
+                    recordTemperature(userDevice.id, req.body.temperature);
+                    return [4 /*yield*/, deviceInstruction(req.body.temperature)];
                 case 2:
-                    data = _a.sent();
-                    if (data !== null) {
-                        return [2 /*return*/, data.token];
-                    }
-                    return [3 /*break*/, 4];
-                case 3:
-                    e_1 = _a.sent();
-                    console.log(e_1);
-                    return [3 /*break*/, 4];
-                case 4: return [2 /*return*/, null];
+                    code = _a.sent();
+                    res.status(code).end();
+                    return [2 /*return*/];
+            }
+        });
+    });
+});
+// NOTE: Cascades into reports
+var destroyDevice = function (deviceId) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, db.none("\n    DELETE FROM user_devices\n    WHERE device_id = $1\n  ", [deviceId])];
+                case 1:
+                    _a.sent();
+                    return [2 /*return*/];
             }
         });
     });
 };
-// Device token allows a device to:
-// 1. Report quickly without having to hash secrets
-// 2. Reauthenticate if some strange action happens on the account
-app.post('/token', function (req, res) {
+// Links a device to a user account and gives back a token to use to send data
+var linkUserDevice = function (userId, deviceId) {
     return __awaiter(this, void 0, void 0, function () {
-        var auth, data, token, e_2;
+        var userDevice;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    console.log("Device token request");
-                    auth = basic_auth_1.default(req);
-                    if (!auth) return [3 /*break*/, 8];
-                    console.log("Device Key: " + auth.name + ", Secret: " + auth.pass);
-                    _a.label = 1;
+                    console.log("linkUserDevice");
+                    // Destroy any link the device has to other users
+                    return [4 /*yield*/, destroyDevice(deviceId)
+                        // Create the new link
+                    ];
                 case 1:
-                    _a.trys.push([1, 6, , 7]);
-                    return [4 /*yield*/, db.oneOrNone("\n        SELECT id\n        FROM devices\n        WHERE key = $1\n        AND secret = crypt($2, secret)\n        LIMIT 1\n      ", [auth.name, auth.pass])];
+                    // Destroy any link the device has to other users
+                    _a.sent();
+                    return [4 /*yield*/, db.one("\n    INSERT INTO user_devices (user_id, device_id, token)\n    VALUES (\n      $1,\n      $2,\n      encode(digest(concat(now(), random()), 'sha256'), 'hex')\n    )\n    RETURNING token\n  ", [userId, deviceId])];
                 case 2:
-                    data = _a.sent();
-                    if (!(data !== null)) return [3 /*break*/, 4];
-                    console.log("Successful auth");
-                    return [4 /*yield*/, grantDeviceToken(data.id)];
-                case 3:
-                    token = _a.sent();
-                    res.send(token);
-                    return [3 /*break*/, 5];
-                case 4:
-                    console.log("Unsuccessful auth");
-                    res.status(400).end();
-                    _a.label = 5;
-                case 5: return [3 /*break*/, 7];
-                case 6:
-                    e_2 = _a.sent();
-                    console.log(e_2);
-                    return [3 /*break*/, 7];
-                case 7: return [3 /*break*/, 9];
-                case 8:
-                    console.log("Malformed auth");
-                    res.status(400).end();
-                    _a.label = 9;
-                case 9: return [2 /*return*/];
+                    userDevice = _a.sent();
+                    return [2 /*return*/, userDevice.token];
             }
         });
     });
-});
+};
 // Linking a device means it starts reporting into a given user's account
+// Requires four parameters:
+// Device Key, Device Secret
+// Username, Password
+// If they're all correct, we will create a user_device token and return it
+// TODO: 400 on bad key/secret
+// TODO: 401 on bad email/password
 app.post('/link', function (req, res) {
-    // Search for key
-    // Check that hashed secret matches prepopulated DB
-    var a = "\n  SELECT EXISTS(\n    SELECT 1\n    FROM devices\n    WHERE key = 'D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX' \n    AND secret = crypt('NEqaSnzcX-rWRFGhZXoFEro8e-EwGK8J', secret)\n    LIMIT 1\n  )\n  ";
-    // If matched, add user-device link
-    // Require user account info from user token
-    var b = "\n  INSERT INTO user_devices (user_id, device_id) VALUES (1, 1)\n  ";
-    // Clear all device data obtained from other user links
-    var c = "\n  DELETE FROM reports WHERE user_device_id != 123\n  ";
+    return __awaiter(this, void 0, void 0, function () {
+        var device, user, token;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    console.log("Link request");
+                    console.log(req.body.key);
+                    console.log(req.body.secret);
+                    console.log(req.body.email);
+                    console.log(req.body.password);
+                    return [4 /*yield*/, db.oneOrNone("\n    SELECT id\n    FROM devices\n    WHERE key = $1\n    AND secret = crypt($2, secret)\n  ", [req.body.key, req.body.secret])];
+                case 1:
+                    device = _a.sent();
+                    console.log(device);
+                    return [4 /*yield*/, db.oneOrNone("\n    SELECT id\n    FROM users\n    WHERE email = $1\n    AND password = crypt($2, password)\n  ", [req.body.email, req.body.password])];
+                case 2:
+                    user = _a.sent();
+                    console.log(user);
+                    return [4 /*yield*/, linkUserDevice(user.id, device.id)];
+                case 3:
+                    token = _a.sent();
+                    res.send({ "token": token });
+                    return [2 /*return*/];
+            }
+        });
+    });
 });
 var port = parseInt(process.env.PORT || "3000");
 app.listen(port, function () {

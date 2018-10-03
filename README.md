@@ -54,12 +54,32 @@ Ino build
 
 # Database
 
+## Generate token
+
+SELECT encode(digest(concat(now(), random()), 'sha256'), 'hex');
+
 ## Create Database
 
 createdb kosi
 psql kosi
-CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL);
-CREATE TABLE devices (id BIGSERIAL PRIMARY KEY, key TEXT NOT NULL, secret TEXT NOT NULL, token TEXT);
+CREATE EXTENSION pgcrypto;
+CREATE TABLE users (id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, token TEXT UNIQUE);
+CREATE TABLE devices (id BIGSERIAL PRIMARY KEY, key TEXT NOT NULL, secret TEXT NOT NULL);
+CREATE TABLE user_devices (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users, device_id BIGINT NOT NULL REFERENCES devices, token TEXT UNIQUE);
+CREATE TABLE reports (id BIGSERIAL PRIMARY KEY, user_device_id BIGINT NOT NULL REFERENCES user_devices ON DELETE CASCADE, temperature NUMERIC(4, 2) NOT NULL, timestamp TIMESTAMP NOT NULL DEFAULT now());
+
+## Prepopulate Database
+
+INSERT INTO users (email, password) VALUES (
+	'clarksonian@gmail.com',
+	crypt('password', gen_salt('bf', 8))
+);
+
+INSERT INTO devices (key, secret) VALUES (
+	'D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX',
+	crypt('NEqaSnzcX-rWRFGhZXoFEro8e-EwGK8J', gen_salt('bf', 8))
+);
+
 
 # node
 

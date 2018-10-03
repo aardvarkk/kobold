@@ -1,6 +1,5 @@
 import express from 'express'
 import bodyParser from 'body-parser'
-import basicAuth from 'basic-auth'
 
 const pgp = require('pg-promise')()
 const db = pgp(process.env.DATABASE_URL || "postgresql://localhost/kosi")
@@ -9,102 +8,108 @@ const app: express.Application = express()
 
 app.use(bodyParser.json())
 
-app.post('/', function(req: express.Request, res: express.Response) {
-  console.log("Received report")
-  console.log(`Auth: ${req.get("Authorization")}`)
-  console.log(req.body)
-
-  // TODO: Return 200 if cool
-  // TODO: Return 201 if heat
-  // TODO: Return 401 if bad token
-  // TODO: Return 403 if unlinked
-  // TODO: Return 405 if reset requested
-
-  res.status(401).end()
-})
-
-const grantDeviceToken = async function(deviceId: string) {
-  console.log("grantDeviceToken")
-
-  try {
-    const data = await db.oneOrNone(`
-      UPDATE devices 
-      SET token = encode(digest(concat(now(), random()), 'sha256'), 'hex')
-      WHERE id = $1
-      RETURNING token
-    `, [deviceId])
-
-    if (data !== null) {
-      return data.token
-    }
-  } catch(e) {
-    console.log(e)
-  }
-
-  return null
+const recordTemperature = async function(userDeviceId: number, temperature: number) {
+  db.none(`
+    INSERT INTO reports (user_device_id, temperature)
+    VALUES ($1, $2)
+  `, [userDeviceId, temperature])
 }
 
-// Device token allows a device to:
-// 1. Report quickly without having to hash secrets
-// 2. Reauthenticate if some strange action happens on the account
-app.post('/token', async function(req: express.Request, res: express.Response) {
-  console.log("Device token request")
-  const auth = basicAuth(req)
-
-  if (auth) {
-    console.log(`Device Key: ${auth.name}, Secret: ${auth.pass}`)
-
-    try {
-      const data = await db.oneOrNone(`
-        SELECT id
-        FROM devices
-        WHERE key = $1
-        AND secret = crypt($2, secret)
-        LIMIT 1
-      `, [auth.name, auth.pass])
-
-      if (data !== null) {
-        console.log("Successful auth")
-        const token = await grantDeviceToken(data.id)
-        res.send(token)
-      } else {
-        console.log("Unsuccessful auth")
-        res.status(400).end()
-      }
-    } catch(e) {
-      console.log(e)
-    }
+const deviceInstruction = async function(temperature: number) {
+  if (temperature < 18.0) {
+    return 201;
   } else {
-    console.log("Malformed auth")
-    res.status(400).end()
+    return 200;
   }
+}
+
+app.post('/', async function(req: express.Request, res: express.Response) {
+  console.log("Received report")
+  console.log(req.body)
+
+  // TODO: Return 403 if bad token
+  
+  const auth = (req.get("Authorization") || "").split(' ')
+  const token = auth[1]
+  const userDevice = await db.oneOrNone(`
+    SELECT id
+    FROM user_devices
+    WHERE token = $1
+  `, [token])
+
+  // Asynchronously record the temperature
+  recordTemperature(userDevice.id, req.body.temperature)
+
+  // TODO: Return 405 if reset requested
+
+  const code = await deviceInstruction(req.body.temperature)
+  
+  res.status(code).end()
 })
 
-// Linking a device means it starts reporting into a given user's account
-app.post('/link', function(req: express.Request, res: express.Response) {
-  // Search for key
-  // Check that hashed secret matches prepopulated DB
-  
-  const a = `
-  SELECT EXISTS(
-    SELECT 1
-    FROM devices
-    WHERE key = 'D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX' 
-    AND secret = crypt('NEqaSnzcX-rWRFGhZXoFEro8e-EwGK8J', secret)
-    LIMIT 1
-  )
-  `
+// NOTE: Cascades into reports
+const destroyDevice = async function(deviceId: number) {
+  await db.none(`
+    DELETE FROM user_devices
+    WHERE device_id = $1
+  `, [deviceId])
+}
 
-  // If matched, add user-device link
-  // Require user account info from user token
-  const b = `
-  INSERT INTO user_devices (user_id, device_id) VALUES (1, 1)
-  `
-  
-  // Clear all device data obtained from other user links
-  const c = `
-  DELETE FROM reports WHERE user_device_id != 123
-  `
+// Links a device to a user account and gives back a token to use to send data
+const linkUserDevice = async function(userId: number, deviceId: number) {
+  console.log("linkUserDevice")
+
+  // Destroy any link the device has to other users
+  await destroyDevice(deviceId)
+
+  // Create the new link
+  const userDevice = await db.one(`
+    INSERT INTO user_devices (user_id, device_id, token)
+    VALUES (
+      $1,
+      $2,
+      encode(digest(concat(now(), random()), 'sha256'), 'hex')
+    )
+    RETURNING token
+  `, [userId, deviceId])
+
+  return userDevice.token
+}
+
+// Linking a device means it starts reporting into a given user's account
+// Requires four parameters:
+// Device Key, Device Secret
+// Username, Password
+// If they're all correct, we will create a user_device token and return it
+// TODO: 400 on bad key/secret
+// TODO: 401 on bad email/password
+app.post('/link', async function(req: express.Request, res: express.Response) {
+  console.log("Link request")
+  console.log(req.body.key)
+  console.log(req.body.secret)
+  console.log(req.body.email)
+  console.log(req.body.password)
+
+  const device = await db.oneOrNone(`
+    SELECT id
+    FROM devices
+    WHERE key = $1
+    AND secret = crypt($2, secret)
+  `, [req.body.key, req.body.secret])
+
+  console.log(device)
+
+  const user = await db.oneOrNone(`
+    SELECT id
+    FROM users
+    WHERE email = $1
+    AND password = crypt($2, password)
+  `, [req.body.email, req.body.password])
+
+  console.log(user)
+
+  const token = await linkUserDevice(user.id, device.id)
+  res.send({ "token": token })
 })
 
 const port: number = parseInt(process.env.PORT || "3000")
