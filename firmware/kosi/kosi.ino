@@ -1,20 +1,8 @@
-#define REQUIRESALARMS false
-
-// Allow Web Browser Update
-#define OTA_WEB_PUSH
-
-#include "client.hpp"
 #include "constants.hpp"
-#include "control.hpp"
 #include "sensors.hpp"
-#include "globals.hpp"
-#include "led.hpp"
 #include "log.hpp"
-#include "relay.hpp"
 #include "state.hpp"
 #include "storage.hpp"
-#include "webserver.hpp"
-#include "wifi.hpp"
 #include "yield.hpp"
 
 void init_serial() {

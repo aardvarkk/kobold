@@ -1,9 +1,14 @@
+#include <ESP8266mDNS.h>
+
 #include "constants.hpp"
 #include "globals.hpp"
 #include "log.hpp"
 #include "state.hpp"
 #include "storage.hpp"
 #include "webserver.hpp"
+
+// Allow Web Browser Update
+#define OTA_WEB_PUSH
 
 void init_webserver(ESP8266WebServer& server) {
   _l("init_webserver");

@@ -1,3 +1,5 @@
+#include <ESP8266HTTPClient.h>
+
 #include "client.hpp"
 #include "constants.hpp"
 #include "log.hpp"
