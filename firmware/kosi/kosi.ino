@@ -1,14 +1,7 @@
 #define REQUIRESALARMS false
 
-// Allow Arduino OTA
-//#define OTA_ARDUINO
-
 // Allow Web Browser Update
 #define OTA_WEB_PUSH
-
-#ifdef OTA_ARDUINO
-#include <ArduinoOTA.h>
-#endif
 
 #include "client.hpp"
 #include "constants.hpp"
@@ -36,47 +29,7 @@ void init_pins() {
   pinMode(PIN_ONE_WIRE, INPUT);
 }
 
-#ifdef OTA_ARDUINO
-void init_ota() {
-  _l("init_ota");
-
-  ArduinoOTA.onStart([]() {
-    _l("ArduinoOTA.onStart");
-  });
-
-  ArduinoOTA.onEnd([]() {
-    _l("ArduinoOTA.onEnd");
-  });
-
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    _l("ArduinoOTA.onProgress");
-  });
-
-  ArduinoOTA.onError([](ota_error_t error) {
-    _l("ArduinoOTA.onError");
-
-    if (error == OTA_AUTH_ERROR) {
-      _l("Auth Failed");
-    } else if (error == OTA_BEGIN_ERROR) {
-      _l("Begin Failed");
-    } else if (error == OTA_CONNECT_ERROR) {
-      _l("Connect Failed");
-    } else if (error == OTA_RECEIVE_ERROR) {
-      _l("Receive Failed");
-    } else if (error == OTA_END_ERROR) {
-      _l("End Failed");
-    }
-  });
-
-  ArduinoOTA.begin();
-}
-#endif
-
 void setup() {
-  #ifdef OTA_ARDUINO
-  init_ota();
-  #endif
-
   init_serial();
   init_pins();
   init_sensors();
@@ -94,11 +47,6 @@ void setup() {
 }
 
 void loop() {
-
-  #ifdef OTA_ARDUINO
-  ArduinoOTA.handle();
-  #endif
-
   switch (_mode) {
     case RunMode::ONLINE:
       process_online();
