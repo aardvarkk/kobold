@@ -1,10 +1,4 @@
-#pragma region defines
-
 #define REQUIRESALARMS false
-
-// Active LOW (both LED and relay)
-#define ACTIVE   LOW
-#define INACTIVE HIGH
 
 // Allow Arduino OTA
 //#define OTA_ARDUINO
@@ -19,122 +13,14 @@
   _valid_log_history = min(_valid_log_history + 1, LOG_HISTORY_LENGTH); \
 }
 
-#pragma endregion
-
-#pragma region includes
-
 #ifdef OTA_ARDUINO
 #include <ArduinoOTA.h>
 #endif
 
-#include <DallasTemperature.h>
-#include <EEPROM.h>
-#include <ESP8266HTTPClient.h>
-#include <ESP8266mDNS.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <ESP8266HTTPUpdateServer.h>
-
-#pragma endregion
-
-#pragma region constants
-
-// CONSTANTS
-String         KEY    = "D82V8IDgiJUgPwj9ZbbXcS3r002kgiUX"; // BURN IN (use first AP_KEY_CHARS characters for internal SSID)
-String         SECRET = "NEqaSnzcX-rWRFGhZXoFEro8e-EwGK8J"; // BURN IN (use first AP_SECRET_CHARS characters for internal password)
-
-const bool     FORCE_OFFLINE = false;
-String         UPDATE_HOST = "kosi"; // http://kosi.local/update
-String         AP_PREPEND  = "kosi-";
-String         REPORT_URL_DEFAULT = "http://kosi.ca/";
-const int      AP_KEY_CHARS    = 6;
-const int      AP_SECRET_CHARS = 8;
-const uint8_t  PIN_RELAY = 12;
-const uint8_t  PIN_LED = 13;
-const uint8_t  PIN_ONE_WIRE = 14;
-const long     SERIAL_SPEED = 115200;
-const SerialConfig SERIAL_CONFIG = SERIAL_8N1;
-const int      MAGIC_SIZE = 4;
-const char     MAGIC[MAGIC_SIZE] = { 'K', 'B', 'L', 'D' };
-const uint8_t  VERSION = 1;
-const int      EEPROM_SIZE = 512;
-const float    DEFAULT_SETPOINT = 18.0;
-const uint8_t  SENSOR_ADC_BITS = 12;
-const int      YIELD_DELAY_MS = 20;
-const uint16_t SERVER_PORT = 80;
-const int      LOG_HISTORY_LENGTH = 0x20;
-const uint8_t  MAX_NETWORKS = 0x40;
-const bool     SCAN_FOR_HIDDEN = false;
-
-const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
-const unsigned long PERIOD_BLINK_OFF = 950000;
-const unsigned long PERIOD_BLINK_ON  =  50000;
-const unsigned long PERIOD_CHECK_TEMP = 1e7; // 1e7 = 10 seconds
-//const unsigned long PERIOD_CHECK_TEMP = 3e8; // 3e8 = 5 minutes
-const unsigned long PERIOD_RETRY_ONLINE = 6e7; // 6e7 = 1 minute
-
-#pragma endregion
-
-#pragma region types
-
-enum class RunMode {
-  OFFLINE,
-  ONLINE
-};
-
-struct Storage {
-  char    magic[MAGIC_SIZE];
-  
-  uint8_t version;
-
-  String  ssid_internal;
-  String  password_internal;
-  
-  String  ssid_external;
-  String  password_external;
-  
-  String  report_url;
-
-  String  token;
-  
-  float   setpoint;
-};
-
-struct Network {
-  String   ssid;
-  uint8_t  encryption_type;
-  int32_t  rssi;
-  uint8_t* bssid;
-  int32_t  channel;
-  bool     is_hidden;
-};
-
-#pragma endregion
-
-#pragma region globals
-
-RunMode           _mode;
-Storage           _storage;
-unsigned long     _last_wifi_scan;
-unsigned long     _last_checked_temp;
-unsigned long     _last_changed_blink;
-unsigned long     _latest_user_action;
-unsigned long     _last_started_temp_req;
-unsigned long     _conversion_period;
-bool              _started_temp_req;
-bool              _blink_state;
-OneWire           _one_wire_bus(PIN_ONE_WIRE);
-DallasTemperature _sensor_interface(&_one_wire_bus);
-DeviceAddress     _sensor_address;
-ESP8266WebServer  _server;
-ESP8266HTTPUpdateServer _update_server;
-String            _log_history[LOG_HISTORY_LENGTH];
-int               _log_history_idx = 0;
-int               _valid_log_history = 0;
-uint8_t           _num_found_networks = 0;
-Network           _found_networks[MAX_NETWORKS];
-
-#pragma endregion
+#include "constants.h"
+#include "globals.h"
+#include "webserver.h"
+#include "wifi.h"
 
 void reset_timers(unsigned long now) {
   log("reset_timers");
@@ -387,52 +273,6 @@ String get_log_contents() {
     contents += "\n";
   }
   return contents;
-}
-
-String render_ssid(Network const& network) {
-  String ssid;
-  ssid += "<div><input type=\"radio\" name=\"ssid-external\" id=\"";
-  ssid += network.ssid;
-  ssid += "\" value=\"";
-  ssid += network.ssid;
-  ssid += "\"/><label for=\"";
-  ssid += network.ssid;
-  ssid += "\">";
-  ssid += network.ssid;
-  ssid += "</label></div>";
-  return ssid;
-}
-
-String render_ssids(Network const* networks, uint8_t count) {
-  String ssids;
-  for (auto i = 0; i < count; ++i) {
-    ssids += render_ssid(networks[i]);
-  }
-  return ssids;
-}
-
-String render_root() {
-  String html;
-
-  html += "<html><head><title>kosi</title></head><body><form method=\"post\" action=\"/settings\">";
-  html += "<fieldset><legend>Internal SSID</legend><input type=\"text\" name=\"ssid-internal\" value=\"";
-  html += String(_storage.ssid_internal).substring(AP_PREPEND.length()) + "\"/></fieldset>";
-//  html += "<fieldset><legend>Internal Password</legend><input type=\"password\" name=\"password-internal\" value=\"";
-//  html += String(_storage.password_internal) + "\"/></fieldset>";
-  html += "<fieldset><legend>External SSID</legend>";
-  html += render_ssids(_found_networks, _num_found_networks);
-  html += "</fieldset>";
-  html += "<fieldset><legend>External Password</legend><input type=\"password\" name=\"password-external\"/></fieldset>";
-  html += "<fieldset><legend>Report URL</legend><input type=\"url\" name=\"report-url\" value=\"";
-  html += String(_storage.report_url) + "\"/></fieldset>";
-  html += "<fieldset><legend>Set Point</legend><input type=\"number\" value=\"";
-  html += String(_storage.setpoint) + "\" step=\"0.1\" min=\"0.0\" max=\"25.0\" name=\"setpoint\"/></fieldset>";
-  html += "<input type=\"submit\"/></form>"
-  html += "<div>Key: <pre>" + KEY + "</pre></div>";
-  html += "<div>Secret: <pre>" + SECRET + "</pre></div>";
-  html += "</body></html>";
-
-  return html;
 }
 
 void init_webserver(ESP8266WebServer& server) {
