@@ -59,16 +59,6 @@ void init_ap(String const& ssid, String const& password) {
   }
 }
 
-void log_wifi(Network const& network) {
-  String line =
-    network.ssid + " " +
-    "(" + encryption_type_string(network.encryption_type) + ") " +
-    "RSSI: " + network.rssi + " " +
-    "CHANNEL: " + network.channel + " " +
-    (network.is_hidden ? "HIDDEN!" : "");
-  _l(line);
-}
-
 // Callback for networks being found
 void on_scan_complete(int found) {
   _l("on_scan_complete");

@@ -1,4 +1,5 @@
 #include "log.hpp"
+#include "wifi.hpp"
 
 // Concatenate all recent logs into a single string
 String get_log_contents() {
@@ -18,4 +19,14 @@ void log_device_address(DeviceAddress& device_address) {
     device_address[0], device_address[1], device_address[2], device_address[3],
     device_address[4], device_address[5], device_address[6], device_address[7]);
   _l(address);
+}
+
+void log_wifi(Network const& network) {
+  String line =
+    network.ssid + " " +
+    "(" + encryption_type_string(network.encryption_type) + ") " +
+    "RSSI: " + network.rssi + " " +
+    "CHANNEL: " + network.channel + " " +
+    (network.is_hidden ? "HIDDEN!" : "");
+  _l(line);
 }
