@@ -10,6 +10,65 @@
 // Allow Web Browser Update
 #define OTA_WEB_PUSH
 
+void save_settings(ESP8266WebServer& server) {
+  _l("/settings");
+
+  String ssid_internal;
+  String ssid_external, password_external;
+  String report_url, setpoint;
+
+  for (int i = 0; i < server.args(); ++i) {
+    auto name = server.argName(i);
+    auto val  = server.arg(i);
+
+    _l(name);
+    _l(val);
+
+    if (name == "ssid-internal")     { ssid_internal = val; }
+    if (name == "ssid-external")     { ssid_external = val; }
+    if (name == "password-external") { password_external = val; }
+    if (name == "setpoint")          { setpoint = val; }
+    if (name == "report-url")        { report_url = val; }
+  }
+
+  bool dirty = false;
+
+  if (ssid_internal.length()) {
+    ssid_internal = AP_PREPEND + ssid_internal;
+    if (ssid_internal != _storage.ssid_internal) {
+      _storage.ssid_internal = ssid_internal;
+      dirty = true;
+      to_offline(micros());
+    }
+  }
+
+  if (ssid_external.length() && password_external.length()) {
+    _storage.ssid_external     = ssid_external;
+    _storage.password_external = password_external;
+    dirty = true;
+  }
+
+  if (report_url.length()) {
+    if (report_url != _storage.report_url) {
+      _storage.report_url = report_url;
+      dirty = true;
+    }
+  }
+  
+  if (setpoint.length()) {
+    if (String(_storage.setpoint) != setpoint) {
+      _storage.setpoint = setpoint.toFloat();
+      dirty = true;
+    }
+  }
+
+  if (dirty) {
+    serialize_storage(_storage, true);
+  }
+
+  server.send(200);
+}
+
 void init_webserver(ESP8266WebServer& server) {
   _l("init_webserver");
 
@@ -28,72 +87,7 @@ void init_webserver(ESP8266WebServer& server) {
   });
 
   server.on("/settings", HTTP_POST, [&server]() {
-    _l("/settings");
-
-    String ssid_internal;//, password_internal;
-    String ssid_external, password_external;
-    String report_url, setpoint;
-
-    for (int i = 0; i < server.args(); ++i) {
-      auto name = server.argName(i);
-      auto val  = server.arg(i);
-
-      _l(name);
-      _l(val);
-
-      if (name == "ssid-internal") {
-        ssid_internal = val;
-      }
-
-//      if (name == "password-internal") {
-//        password_internal = val;
-//      }
-
-      if (name == "ssid-external") {
-        ssid_external = val;
-      }
-
-      if (name == "password-external") {
-        password_external = val;
-      }
-
-      if (name == "setpoint") {
-        setpoint = val;
-      }
-
-      if (name == "report-url") {
-        report_url = val;
-      }
-    }
-
-    if (ssid_internal.length()/* && password_internal.length()*/) {
-      ssid_internal = AP_PREPEND + ssid_internal;
-      // Only save these values if they're different (so we don't reboot for nothing!)
-      if (ssid_internal     != _storage.ssid_internal/* || password_internal != _storage.password_internal*/) {
-        _storage.ssid_internal = ssid_internal;
-//        _storage.password_internal = password_internal;
-        serialize_storage(_storage, true);
-        to_offline(micros());
-      }
-    }
-
-    if (ssid_external.length() && password_external.length()) {
-      _storage.ssid_external = ssid_external;
-      _storage.password_external = password_external;
-      serialize_storage(_storage, true);
-    }
-
-    if (report_url.length()) {
-      _storage.report_url = report_url;
-      serialize_storage(_storage, true);
-    }
-    
-    if (setpoint.length()) {
-      _storage.setpoint = setpoint.toFloat();
-      serialize_storage(_storage, true);
-    }
-
-    server.send(200);
+    save_settings(server);
   });
 
   server.on("/logs", [&server]() {
