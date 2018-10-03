@@ -5,16 +5,6 @@
 #include "log.hpp"
 #include "types.hpp"
 
-String report_json(float temp) {
-  String json;
-  json += "{";
-  json += "\"temp\":";
-  json += String(temp);
-  json += "}";
-  _l(json);
-  return json;  
-}
-
 int report_temperature(String const& report_url, String const& token, float temp, String& response) {
   _l("report_temperature");
   _l(report_url);
@@ -81,4 +71,14 @@ int refresh_token(String const& url, String const& username, String const& passw
 
   client.end();
   return code;
+}
+
+String report_json(float temp) {
+  String json;
+  json += "{";
+  json += "\"temp\":";
+  json += String(temp);
+  json += "}";
+  _l(json);
+  return json;  
 }

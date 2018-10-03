@@ -4,6 +4,67 @@
 #include "magic.hpp"
 #include "storage.hpp"
 
+// Set up and save to storage the initial settings for the device
+void first_time_storage(Storage& storage) {
+  _l("first_time_storage");
+  for (auto i = 0; i < MAGIC_SIZE; ++i) {
+    storage.magic[i] = MAGIC[i];
+  }
+  storage.version = VERSION;
+
+  // Set internal SSID and password to be based on key and secret
+  storage.ssid_internal     = AP_PREPEND + KEY.substring(0, AP_KEY_CHARS);
+  storage.password_internal = SECRET.substring(0, AP_SECRET_CHARS);
+
+  storage.ssid_external = "";
+  storage.password_external = "";
+  
+  storage.report_url = REPORT_URL_DEFAULT;
+
+  storage.token = "";
+  
+  storage.setpoint = DEFAULT_SETPOINT;
+  
+  serialize_storage(storage, true);
+}
+
+// Serialize the entirety of EEPROM to/from Storage
+bool serialize_storage(Storage& storage, bool write) {
+  _l("serialize_storage");
+  _l(write);
+
+  _l("begin");
+  EEPROM.begin(EEPROM_SIZE);
+
+  int address = 0;
+
+  for (auto i = 0; i < MAGIC_SIZE; ++i) {
+    serialize_char(storage.magic[i], address, write);
+  }
+
+  if (!write && !magic_match(storage)) {
+    _l("end");
+    EEPROM.end();
+    return false;
+  }
+  
+  serialize_uint8_t(storage.version, address, write);
+
+  serialize_string(storage.ssid_internal, address, write);
+  serialize_string(storage.password_internal, address, write);
+  serialize_string(storage.ssid_external, address, write);
+  serialize_string(storage.password_external, address, write);
+  serialize_string(storage.report_url, address, write);
+  serialize_string(storage.token, address, write);
+
+  serialize_float(storage.setpoint, address, write);
+
+  _l("end");
+  EEPROM.end();
+
+  return true;
+}
+
 // Read/write a single uint8_t value
 void serialize_uint8_t(uint8_t& val, int& address, bool write) {
 //  _l("serialize_uint8_t");
@@ -65,67 +126,6 @@ void serialize_float(float& val, int& address, bool write) {
     EEPROM.get(address, val);
   }
   address += sizeof(val);
-}
-
-// Serialize the entirety of EEPROM to/from Storage
-bool serialize_storage(Storage& storage, bool write) {
-  _l("serialize_storage");
-  _l(write);
-
-  _l("begin");
-  EEPROM.begin(EEPROM_SIZE);
-
-  int address = 0;
-
-  for (auto i = 0; i < MAGIC_SIZE; ++i) {
-    serialize_char(storage.magic[i], address, write);
-  }
-
-  if (!write && !magic_match(storage)) {
-    _l("end");
-    EEPROM.end();
-    return false;
-  }
-  
-  serialize_uint8_t(storage.version, address, write);
-
-  serialize_string(storage.ssid_internal, address, write);
-  serialize_string(storage.password_internal, address, write);
-  serialize_string(storage.ssid_external, address, write);
-  serialize_string(storage.password_external, address, write);
-  serialize_string(storage.report_url, address, write);
-  serialize_string(storage.token, address, write);
-
-  serialize_float(storage.setpoint, address, write);
-
-  _l("end");
-  EEPROM.end();
-
-  return true;
-}
-
-// Set up and save to storage the initial settings for the device
-void first_time_storage(Storage& storage) {
-  _l("first_time_storage");
-  for (auto i = 0; i < MAGIC_SIZE; ++i) {
-    storage.magic[i] = MAGIC[i];
-  }
-  storage.version = VERSION;
-
-  // Set internal SSID and password to be based on key and secret
-  storage.ssid_internal     = AP_PREPEND + KEY.substring(0, AP_KEY_CHARS);
-  storage.password_internal = SECRET.substring(0, AP_SECRET_CHARS);
-
-  storage.ssid_external = "";
-  storage.password_external = "";
-  
-  storage.report_url = REPORT_URL_DEFAULT;
-
-  storage.token = "";
-  
-  storage.setpoint = DEFAULT_SETPOINT;
-  
-  serialize_storage(storage, true);
 }
 
 bool internet_settings_exist(Storage const& storage) {

@@ -22,11 +22,6 @@ void init_sensors() {
   reset_conversion();
 }
 
-void reset_conversion() {
-  _started_temp_req = false;
-  _last_started_temp_req = 0;
-}
-
 bool process_conversion(unsigned long now, unsigned long conversion_period, float& temp) {
   // We're waiting for conversion to complete
   if (_started_temp_req) {
@@ -51,5 +46,10 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
   }
 
   return false;
+}
+
+void reset_conversion() {
+  _started_temp_req = false;
+  _last_started_temp_req = 0;
 }
 

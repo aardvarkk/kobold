@@ -110,22 +110,6 @@ void process_offline() {
   }
 }
 
-void set_mode(RunMode mode) {
-  _mode = mode;
-}
-
-void to_offline(unsigned long now) {
-  _l("to_offline");
-
-  reset_timers(now);
-  set_blink(true, now);
-
-  init_ap(_storage.ssid_internal, _storage.password_internal);
-  init_webserver(_server);
-
-  set_mode(RunMode::OFFLINE);
-}
-
 void to_online(unsigned long now) {
   _l("to_online");
 
@@ -145,4 +129,20 @@ void to_online(unsigned long now) {
       to_offline(now);
     }
   }
+}
+
+void to_offline(unsigned long now) {
+  _l("to_offline");
+
+  reset_timers(now);
+  set_blink(true, now);
+
+  init_ap(_storage.ssid_internal, _storage.password_internal);
+  init_webserver(_server);
+
+  set_mode(RunMode::OFFLINE);
+}
+
+void set_mode(RunMode mode) {
+  _mode = mode;
 }
