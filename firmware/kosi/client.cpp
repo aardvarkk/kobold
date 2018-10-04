@@ -1,9 +1,26 @@
+#include <ArduinoJson.h>
 #include <ESP8266HTTPClient.h>
 
 #include "client.hpp"
 #include "constants.hpp"
 #include "log.hpp"
 #include "types.hpp"
+
+bool parse_json(String const& response, JsonObject& root) {
+  _l("parse_json");
+
+  DynamicJsonDocument doc;
+  auto error = deserializeJson(doc, response);
+
+  if (error) {
+    _l("parse_json error");
+    _l(error.c_str());
+    return false;
+  }
+
+  root = doc.as<JsonObject>();
+  return true;
+}
 
 int report_temperature(String const& report_url, String const& token, float temp, String& response) {
   _l("report_temperature");
@@ -19,7 +36,7 @@ int report_temperature(String const& report_url, String const& token, float temp
   if (success) {
     client.addHeader("Authorization", String("Bearer ") + token);
     client.addHeader("Content-Type", "application/json");
-    code = client.POST(report_json(temp));
+    code = client.POST(json_report_temperature(temp));
     _l(code);
     if (code < 0) {
       _l("http request failed");
@@ -27,6 +44,7 @@ int report_temperature(String const& report_url, String const& token, float temp
     } else {
       _l("http request succeeded");
       response = client.getString();
+      _l(response);
     }
   } else {
     _l("failed starting http client");
@@ -38,13 +56,13 @@ int report_temperature(String const& report_url, String const& token, float temp
   return code;
 }
 
-int refresh_token(String const& url, String const& username, String const& password, String& token) {
-  _l("refresh_token");
+int link_device(String const& url, String const& email, String const& password, String& token) {
+  _l("link_device");
   _l(url);
-//  _l(username);
-//  _l(password);
+  _l(email);
+  _l(password);
   
-  int code = -1;
+  int code = 0;
   token = "";
 
   digitalWrite(PIN_LED, ACTIVE);
@@ -52,19 +70,29 @@ int refresh_token(String const& url, String const& username, String const& passw
   HTTPClient client;
   auto success = client.begin(url);
   if (success) {
-    client.setAuthorization(username.c_str(), password.c_str());
-    code = client.POST("");
+    client.addHeader("Content-Type", "application/json");
+    code = client.POST(json_link_device(email, password));
     _l(code);
     if (code < 0) {
       _l("http request failed");
       _l(HTTPClient::errorToString(code));
     } else {
       _l("http request succeeded");
-      token = client.getString();
-      _l(token);
+      
+      JsonObject json;
+      switch (code) {
+        case 200:
+          if (parse_json(client.getString(), json)) {
+            token = json.get<String>("token");
+          }
+          break;
+        default:
+          _l("unrecognized code");
+          break;
+      }
     }
   } else {
-    _l("failed to start HTTP client");
+    _l("failed to start http client");
   }
 
   digitalWrite(PIN_LED, INACTIVE);
@@ -73,11 +101,22 @@ int refresh_token(String const& url, String const& username, String const& passw
   return code;
 }
 
-String report_json(float temp) {
+String json_report_temperature(float temp) {
   String json;
   json += "{";
-  json += "\"temp\":";
-  json += String(temp);
+  json += "\"temperature\":" + String(temp);
+  json += "}";
+  _l(json);
+  return json;  
+}
+
+String json_link_device(String const& email, String const& password) {
+  String json;
+  json += "{";
+  json += "\"key\":\"" + KEY + "\",";
+  json += "\"secret\":\"" + SECRET + "\",";
+  json += "\"email\":\"" + email + "\",";
+  json += "\"password\":\"" + password + "\"";
   json += "}";
   _l(json);
   return json;  

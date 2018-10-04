@@ -75,11 +75,19 @@ app.post('/', function (req, res) {
                     console.log(req.body);
                     auth = (req.get("Authorization") || "").split(' ');
                     token = auth[1];
-                    return [4 /*yield*/, db.oneOrNone("\n    SELECT id\n    FROM user_devices\n    WHERE token = $1\n  ", [token])
-                        // Asynchronously record the temperature
-                    ];
+                    return [4 /*yield*/, db.oneOrNone("\n    SELECT id\n    FROM user_devices\n    WHERE token = $1\n  ", [token])];
                 case 1:
                     userDevice = _a.sent();
+                    if (userDevice === null) {
+                        console.log("Bad token " + token);
+                        res.status(401).end();
+                        return [2 /*return*/];
+                    }
+                    if (!req.body.temperature) {
+                        console.log('Bad report');
+                        res.status(400).end();
+                        return [2 /*return*/];
+                    }
                     // Asynchronously record the temperature
                     recordTemperature(userDevice.id, req.body.temperature);
                     return [4 /*yield*/, deviceInstruction(req.body.temperature)];
@@ -127,10 +135,10 @@ var linkUserDevice = function (userId, deviceId) {
         });
     });
 };
-// Linking a device means it starts reporting into a given user's account
+// Links a device, which obtains a token and starts reporting into a given user's account
 // Requires four parameters:
 // Device Key, Device Secret
-// Username, Password
+// Email, Password
 // If they're all correct, we will create a user_device token and return it
 // TODO: 400 on bad key/secret
 // TODO: 401 on bad email/password

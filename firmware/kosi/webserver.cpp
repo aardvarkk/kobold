@@ -1,14 +1,9 @@
-#include <ESP8266mDNS.h>
-
 #include "constants.hpp"
 #include "globals.hpp"
 #include "log.hpp"
 #include "state.hpp"
 #include "storage.hpp"
 #include "webserver.hpp"
-
-// Allow Web Browser Update
-#define OTA_WEB_PUSH
 
 void save_settings(ESP8266WebServer& server) {
   _l("/settings");
@@ -34,7 +29,7 @@ void save_settings(ESP8266WebServer& server) {
   bool dirty = false;
 
   if (ssid_internal.length()) {
-    ssid_internal = AP_PREPEND + ssid_internal;
+    ssid_internal = AP_PREPEND + ssid_internal;    
     if (ssid_internal != _storage.ssid_internal) {
       _storage.ssid_internal = ssid_internal;
       dirty = true;
@@ -43,9 +38,12 @@ void save_settings(ESP8266WebServer& server) {
   }
 
   if (ssid_external.length() && password_external.length()) {
-    _storage.ssid_external     = ssid_external;
-    _storage.password_external = password_external;
-    dirty = true;
+    if (ssid_external     != _storage.ssid_external || 
+        password_external != _storage.password_external) {
+      _storage.ssid_external     = ssid_external;
+      _storage.password_external = password_external;
+      dirty = true;
+    }
   }
 
   if (report_url.length()) {
@@ -69,33 +67,59 @@ void save_settings(ESP8266WebServer& server) {
   server.send(200);
 }
 
+void link_account(ESP8266WebServer& server, String& email, String& password) {
+  _l("/link");
+
+  email = "";
+  password = "";
+
+  for (int i = 0; i < server.args(); ++i) {
+    auto name = server.argName(i);
+    auto val  = server.arg(i);
+
+    _l(name);
+    _l(val);
+
+    if (name == "email")    { email = val; }
+    if (name == "password") { password = val; }
+  }
+
+  server.send(200);
+  to_online(micros());
+}
+
 void init_webserver(ESP8266WebServer& server) {
   _l("init_webserver");
 
-  #ifdef OTA_WEB_PUSH
-  _l("ota web push");
-  MDNS.begin(UPDATE_HOST.c_str());
+  _l("init OTA");
   _update_server.setup(&_server);
-  MDNS.addService("http", "tcp", 80);
-  #endif
 
   server.begin(SERVER_PORT);
 
   server.on("/", [&server]() {
+    _latest_user_action = micros();
     _l("/");
     server.send(200, "text/html", render_root());
   });
 
   server.on("/settings", HTTP_POST, [&server]() {
+    _latest_user_action = micros();
     save_settings(server);
   });
 
+  server.on("/link", HTTP_POST, [&server]() {
+    _latest_user_action = micros();
+    link_account(server, _link_email, _link_password);
+  });
+
   server.on("/logs", [&server]() {
+    _latest_user_action = micros();
     _l("/logs");
     server.send(200, "text/plain", get_log_contents());
   });
 
   server.on("/reset", [&server]() {
+    _latest_user_action = micros();
     _l("/reset");
     first_time_storage(_storage);
     server.send(200);
@@ -107,13 +131,19 @@ void deinit_webserver() {
   _server.close();
 }
 
-String render_ssid(Network const& network) {
+String render_ssid(
+  Network const& network,
+  String const& selected
+) 
+{
   String ssid;
   ssid += "<div><input type=\"radio\" name=\"ssid-external\" id=\"";
   ssid += network.ssid;
   ssid += "\" value=\"";
   ssid += network.ssid;
-  ssid += "\"/><label for=\"";
+  ssid += "\"";
+  if (network.ssid == selected) ssid += " checked";
+  ssid += "/><label for=\"";
   ssid += network.ssid;
   ssid += "\">";
   ssid += network.ssid;
@@ -121,10 +151,10 @@ String render_ssid(Network const& network) {
   return ssid;
 }
 
-String render_ssids(Network const* networks, uint8_t count) {
+String render_ssids(Network const* networks, uint8_t count, String const& selected) {
   String ssids;
   for (auto i = 0; i < count; ++i) {
-    ssids += render_ssid(networks[i]);
+    ssids += render_ssid(networks[i], selected);
   }
   return ssids;
 }
@@ -132,22 +162,44 @@ String render_ssids(Network const* networks, uint8_t count) {
 String render_root() {
   String html;
 
-  html += "<html><head><title>kosi</title></head><body><form method=\"post\" action=\"/settings\">";
+  html += "<html><head><title>kosi</title></head><body>";
+  
+  // Settings Form
+  html += "<h1>Settings</h1>";
+
+  html += "<form method=\"post\" action=\"/settings\">";
+
   html += "<fieldset><legend>Internal SSID</legend><input type=\"text\" name=\"ssid-internal\" value=\"";
   html += String(_storage.ssid_internal).substring(AP_PREPEND.length()) + "\"/></fieldset>";
-//  html += "<fieldset><legend>Internal Password</legend><input type=\"password\" name=\"password-internal\" value=\"";
-//  html += String(_storage.password_internal) + "\"/></fieldset>";
+
   html += "<fieldset><legend>External SSID</legend>";
-  html += render_ssids(_found_networks, _num_found_networks);
+  html += render_ssids(_found_networks, _num_found_networks, _storage.ssid_external);
   html += "</fieldset>";
-  html += "<fieldset><legend>External Password</legend><input type=\"password\" name=\"password-external\"/></fieldset>";
+
+  html += "<fieldset><legend>External Password</legend><input type=\"password\" name=\"password-external\" value=\"";
+  html += String(_storage.password_external) + "\"/></fieldset>";
+
   html += "<fieldset><legend>Report URL</legend><input type=\"url\" name=\"report-url\" value=\"";
   html += String(_storage.report_url) + "\"/></fieldset>";
+
   html += "<fieldset><legend>Set Point</legend><input type=\"number\" value=\"";
   html += String(_storage.setpoint) + "\" step=\"0.1\" min=\"0.0\" max=\"25.0\" name=\"setpoint\"/></fieldset>";
+
   html += "<input type=\"submit\"/></form>";
-  html += "<div>Key: <pre>" + KEY + "</pre></div>";
-  html += "<div>Secret: <pre>" + SECRET + "</pre></div>";
+
+  // Link Form
+  // Only show if there's no token yet (would be cleared on startup if it was bad)
+  if (!_storage.token.length()) {
+    html += "<h1>Link Account</h1>";
+
+    html += "<form method=\"post\" action=\"/link\">";
+
+    html += "<fieldset><legend>Email</legend><input type=\"email\" name=\"email\"/></fieldset>";
+    html += "<fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
+
+    html += "<input type=\"submit\"/></form>";
+  }
+
   html += "</body></html>";
 
   return html;

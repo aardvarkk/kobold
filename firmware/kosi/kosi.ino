@@ -27,7 +27,7 @@ void setup() {
     first_time_storage(_storage);
   }
 
-  if (internet_settings_exist(_storage)) {
+  if (is_online_possible(_storage)) {
     to_online(micros());
   } else {
     to_offline(micros());

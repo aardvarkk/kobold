@@ -4,6 +4,8 @@
 
 int report_temperature(String const& report_url, String const& token, float temp, String& response);
 
-int refresh_token(String const& url, String const& username, String const& password, String& token);
+int link_device(String const& url, String const& email, String const& password, String& token);
 
-String report_json(float temp);
+String json_report_temperature(float temp);
+
+String json_link_device(String const& email, String const& password);

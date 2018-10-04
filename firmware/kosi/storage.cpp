@@ -100,7 +100,7 @@ void serialize_string(String& val, int& address, bool write) {
       serialize_char(c, address, write);
       val += c;
     }      
-//    _l(val);
+   _l(val);
   }
 }
 
@@ -126,8 +126,4 @@ void serialize_float(float& val, int& address, bool write) {
     EEPROM.get(address, val);
   }
   address += sizeof(val);
-}
-
-bool internet_settings_exist(Storage const& storage) {
-  return storage.ssid_external[0] != 0;
 }

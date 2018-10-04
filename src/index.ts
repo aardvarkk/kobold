@@ -27,8 +27,6 @@ app.post('/', async function(req: express.Request, res: express.Response) {
   console.log("Received report")
   console.log(req.body)
 
-  // TODO: Return 403 if bad token
-  
   const auth = (req.get("Authorization") || "").split(' ')
   const token = auth[1]
   const userDevice = await db.oneOrNone(`
@@ -36,6 +34,18 @@ app.post('/', async function(req: express.Request, res: express.Response) {
     FROM user_devices
     WHERE token = $1
   `, [token])
+
+  if (userDevice === null) {
+    console.log(`Bad token ${token}`)
+    res.status(401).end();
+    return;
+  }
+
+  if (!req.body.temperature) {
+    console.log('Bad report')
+    res.status(400).end();
+    return;
+  }
 
   // Asynchronously record the temperature
   recordTemperature(userDevice.id, req.body.temperature)
@@ -76,10 +86,10 @@ const linkUserDevice = async function(userId: number, deviceId: number) {
   return userDevice.token
 }
 
-// Linking a device means it starts reporting into a given user's account
+// Links a device, which obtains a token and starts reporting into a given user's account
 // Requires four parameters:
 // Device Key, Device Secret
-// Username, Password
+// Email, Password
 // If they're all correct, we will create a user_device token and return it
 // TODO: 400 on bad key/secret
 // TODO: 401 on bad email/password
