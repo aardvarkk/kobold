@@ -116,7 +116,9 @@ npm start
 
 vim /etc/nginx/nginx.conf
 
-# Working Setup
+# ESP8266
+
+## Arduino Setup
 
 Board: Generic ESP8266 Module
 Flash Mode: DOUT <- DID NOT WORK OTHERWISE!!!
@@ -129,3 +131,29 @@ CPU Freq: 80MHz
 Builtin LED: 13
 Upload Speed: 115200
 Erase Flash: Sketch Only <- All Flash Contents will erase the EEPROM too!
+
+## Pinout
+
+Pullup Resistor: 4.7k (2% tolerance)
+- 4 yellow
+- 7 purple
+- x100 red
+- 2% tolerance red
+
+Pin 1 is closest to the reset button
+
+### When Programming
+
+1. Vcc (3.3V from CP2104)
+2. Rx (to Tx on CP2104)
+3. Tx (to Rx on CP2104)
+4. Gnd (to Gnd from CP2104)
+5. GPIO 14 (to temp sensor)
+
+### On Mains
+
+1. Vcc (3.3V from wall) -> directly to pin 3 of sensor
+2. Disconnected
+3. Disconnected
+4. Gnd (from wall) -> directly to pin 1 of sensor
+5. GPIO 14 -> through 4.7k resistor to Vcc, to pin 2 of sensor
