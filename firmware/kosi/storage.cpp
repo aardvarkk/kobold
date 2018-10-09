@@ -21,7 +21,8 @@ void first_time_storage(Storage& storage) {
   
   storage.report_url = REPORT_URL_DEFAULT;
 
-  storage.token = "";
+  storage.link_email = "";
+  storage.link_password = "";
   
   storage.setpoint = DEFAULT_SETPOINT;
   
@@ -55,7 +56,8 @@ bool serialize_storage(Storage& storage, bool write) {
   serialize_string(storage.ssid_external, address, write);
   serialize_string(storage.password_external, address, write);
   serialize_string(storage.report_url, address, write);
-  serialize_string(storage.token, address, write);
+  serialize_string(storage.link_email, address, write);
+  serialize_string(storage.link_password, address, write);
 
   serialize_float(storage.setpoint, address, write);
 

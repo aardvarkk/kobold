@@ -10,4 +10,7 @@ void to_offline(unsigned long now);
 
 void set_mode(RunMode mode);
 
+bool wifi_setup(Storage const& storage);
+bool account_setup(Storage const& storage);
+bool token_exists();
 bool is_online_possible(Storage const& storage);

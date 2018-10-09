@@ -21,5 +21,4 @@ int               _log_history_idx = 0;
 int               _valid_log_history = 0;
 uint8_t           _num_found_networks = 0;
 Network           _found_networks[MAX_NETWORKS];
-String            _link_email = "";
-String            _link_password = "";
+String            _token = "";

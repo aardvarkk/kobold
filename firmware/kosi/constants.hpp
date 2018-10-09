@@ -23,14 +23,13 @@ const uint8_t  VERSION = 1;
 const int      EEPROM_SIZE = 512;
 const float    DEFAULT_SETPOINT = 18.0;
 const uint8_t  SENSOR_ADC_BITS = 12;
-const int      YIELD_DELAY_MS = 20;
+const int      YIELD_DELAY_MS = 500;
 const uint16_t SERVER_PORT = 80;
 const int      LOG_HISTORY_LENGTH = 0x20;
 const uint8_t  MAX_NETWORKS = 0x40;
 const bool     SCAN_FOR_HIDDEN = false;
 const uint8_t  ACTIVE = LOW; // Active LOW (both LED and relay)
 const uint8_t  INACTIVE = HIGH;
-const int      TESTING_WAIT = 10000;
 const int      JSON_PARSE_BYTES = 0xFF;
 
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
@@ -39,5 +38,5 @@ const unsigned long PERIOD_BLINK_ON  =  50000;
 // const unsigned long PERIOD_CHECK_TEMP = 1e7; // 1e7 = 10 seconds
 const unsigned long PERIOD_CHECK_TEMP = 2e7; // 2e7 = 20 seconds
 //const unsigned long PERIOD_CHECK_TEMP = 3e8; // 3e8 = 5 minutes
-const unsigned long PERIOD_RETRY_ONLINE = 3e7; // 3e7 = 30 seconds
-// const unsigned long PERIOD_RETRY_ONLINE = 6e7; // 6e7 = 1 minute
+// const unsigned long PERIOD_RETRY_ONLINE = 3e7; // 3e7 = 30 seconds
+const unsigned long PERIOD_RETRY_ONLINE = 6e7; // 6e7 = 1 minute

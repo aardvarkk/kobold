@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 bool init_sta(String const& ssid, String const& password);
+void deinit_sta();
 
 void init_ap(String const& ssid, String const& password);
 void deinit_ap();

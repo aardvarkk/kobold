@@ -109,7 +109,7 @@ void init_webserver(ESP8266WebServer& server) {
 
   server.on("/link", HTTP_POST, [&server]() {
     _latest_user_action = micros();
-    link_account(server, _link_email, _link_password);
+    link_account(server, _storage.link_email, _storage.link_password);
   });
 
   server.on("/logs", [&server]() {
@@ -122,6 +122,7 @@ void init_webserver(ESP8266WebServer& server) {
     _latest_user_action = micros();
     _l("/reset");
     first_time_storage(_storage);
+    ESP.restart();
     server.send(200);
   });
 }
@@ -188,17 +189,14 @@ String render_root() {
   html += "<input type=\"submit\"/></form>";
 
   // Link Form
-  // Only show if there's no token yet (would be cleared on startup if it was bad)
-  if (!_storage.token.length()) {
-    html += "<h1>Link Account</h1>";
+  html += "<h1>Link Account</h1>";
 
-    html += "<form method=\"post\" action=\"/link\">";
+  html += "<form method=\"post\" action=\"/link\">";
 
-    html += "<fieldset><legend>Email</legend><input type=\"email\" name=\"email\"/></fieldset>";
-    html += "<fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
+  html += "<fieldset><legend>Email</legend><input type=\"email\" name=\"email\"/></fieldset>";
+  html += "<fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
 
-    html += "<input type=\"submit\"/></form>";
-  }
+  html += "<input type=\"submit\"/></form>";
 
   html += "</body></html>";
 

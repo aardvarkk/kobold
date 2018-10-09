@@ -20,7 +20,8 @@ struct Storage {
   
   String  report_url;
 
-  String  token;
+  String  link_email;
+  String  link_password;
   
   float   setpoint;
 };

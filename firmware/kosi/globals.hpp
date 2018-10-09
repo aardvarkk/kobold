@@ -28,5 +28,4 @@ extern int               _log_history_idx;
 extern int               _valid_log_history;
 extern uint8_t           _num_found_networks;
 extern Network           _found_networks[MAX_NETWORKS];
-extern String            _link_email;
-extern String            _link_password;
+extern String            _token;

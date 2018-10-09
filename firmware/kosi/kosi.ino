@@ -27,11 +27,7 @@ void setup() {
     first_time_storage(_storage);
   }
 
-  if (is_online_possible(_storage)) {
-    to_online(micros());
-  } else {
-    to_offline(micros());
-  }
+  to_online(micros());
 }
 
 void loop() {

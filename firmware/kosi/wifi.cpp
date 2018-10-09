@@ -8,8 +8,19 @@ bool init_sta(String const& ssid, String const& password) {
   _l(ssid);
   _l(password);
 
-  WiFi.mode(WIFI_STA);
+  WiFi.persistent(false);
+  WiFi.setAutoConnect(false);
+  WiFi.setAutoReconnect(false);
+
+  if (WiFi.mode(WIFI_STA)) {
+    _l("sta mode success");
+  } else {
+    _l("sta mode failure");
+  }
+
   auto status = WiFi.begin(ssid.c_str(), password.c_str());
+  _l("begin status");
+  _l(status);
 
   while (status == WL_DISCONNECTED) {
     yield_delay();
@@ -29,12 +40,38 @@ bool init_sta(String const& ssid, String const& password) {
   }
 }
 
+void deinit_sta() {
+  _l("deinit_sta");
+  
+  if (WiFi.disconnect(true)) {
+    _l("disconnect success");
+  } else {
+    _l("disconnect failure");
+  }
+}
+
 void init_ap(String const& ssid, String const& password) {
   _l("init_ap");
-  _l(WiFi.mode(WIFI_AP_STA));
+  
+  WiFi.persistent(false);
+
+  if (WiFi.mode(WIFI_AP_STA)) {
+    _l("ap mode success");
+  } else {
+    _l("ap mode failure");
+  }
 
   if (WiFi.softAP(ssid.c_str(), password.c_str())) {
     _l("init_ap success");
+
+    _l("ip address");
+    _l(WiFi.softAPIP().toString());
+    _l("mac address");
+    _l(WiFi.softAPmacAddress());
+    _l("ssid");
+	  _l(WiFi.softAPSSID());
+	  _l("psk");
+    _l(WiFi.softAPPSK());
   } else {
     _l("init_ap failure");
   }
@@ -42,7 +79,12 @@ void init_ap(String const& ssid, String const& password) {
 
 void deinit_ap() {
   _l("deinit_ap");
-  WiFi.softAPdisconnect(true);
+  
+  if (WiFi.softAPdisconnect(true)) {
+    _l("softAPdisconnect success");
+  } else {
+    _l("softAPdisconnect failure");
+  }
 }
 
 // Callback for networks being found

@@ -23,8 +23,15 @@ void init_sensors() {
 }
 
 bool process_conversion(unsigned long now, unsigned long conversion_period, float& temp) {
+  // We haven't yet started conversion
+  if (!_started_temp_req) {
+    _l("requestTemperatures");
+    _sensor_interface.requestTemperatures();
+    _last_started_temp_req = now;
+    _started_temp_req = true;
+  }
   // We're waiting for conversion to complete
-  if (_started_temp_req) {
+  else {
     if (period_elapsed(_last_started_temp_req, now, conversion_period)) {
       reset_conversion();
 
@@ -36,13 +43,6 @@ bool process_conversion(unsigned long now, unsigned long conversion_period, floa
         _l("conversion incomplete");
       }
     }
-  }
-  // We haven't yet started conversion
-  else {
-    _l("requestTemperatures");
-    _sensor_interface.requestTemperatures();
-    _last_started_temp_req = now;
-    _started_temp_req = true;
   }
 
   return false;
