@@ -33,6 +33,7 @@ const uint8_t  INACTIVE = HIGH;
 const int      JSON_PARSE_BYTES = 0xFF;
 
 const unsigned long PERIOD_WIFI_SCAN = 3e7; // 3e7 = 30 seconds
+const unsigned long PERIOD_WIFI_TIMEOUT = 1e7; // 1e7 = 10 seconds
 const unsigned long PERIOD_BLINK_OFF = 950000;
 const unsigned long PERIOD_BLINK_ON  =  50000;
 // const unsigned long PERIOD_CHECK_TEMP = 1e7; // 1e7 = 10 seconds

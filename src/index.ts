@@ -91,8 +91,6 @@ const linkUserDevice = async function(userId: number, deviceId: number) {
 // Device Key, Device Secret
 // Email, Password
 // If they're all correct, we will create a user_device token and return it
-// TODO: 400 on bad key/secret
-// TODO: 401 on bad email/password
 app.post('/link', async function(req: express.Request, res: express.Response) {
   console.log("Link request")
   console.log(req.body.key)
@@ -118,8 +116,12 @@ app.post('/link', async function(req: express.Request, res: express.Response) {
 
   console.log(user)
 
-  const token = await linkUserDevice(user.id, device.id)
-  res.send({ "token": token })
+  if (user && device) {
+    const token = await linkUserDevice(user.id, device.id)
+    res.send({ "token": token })  
+  } else {
+    res.status(400).end();
+  }
 })
 
 const port: number = parseInt(process.env.PORT || "3000")

@@ -22,9 +22,14 @@ bool init_sta(String const& ssid, String const& password) {
   _l("begin status");
   _l(status);
 
+  auto start_connect = micros();
   while (status == WL_DISCONNECTED) {
     yield_delay();
     status = WiFi.status();
+    if (abs(micros() - start_connect) >= PERIOD_WIFI_TIMEOUT) {
+      _l("wifi connect timeout!");
+      return false;
+    }
   }
 
   _l("got status");

@@ -11,6 +11,7 @@ void save_settings(ESP8266WebServer& server) {
   String ssid_internal;
   String ssid_external, password_external;
   String report_url, setpoint;
+  String link_email, link_password;
 
   for (int i = 0; i < server.args(); ++i) {
     auto name = server.argName(i);
@@ -24,6 +25,8 @@ void save_settings(ESP8266WebServer& server) {
     if (name == "password-external") { password_external = val; }
     if (name == "setpoint")          { setpoint = val; }
     if (name == "report-url")        { report_url = val; }
+    if (name == "email")             { link_email = val; }
+    if (name == "password")          { link_password = val; }
   }
 
   bool dirty = false;
@@ -46,6 +49,16 @@ void save_settings(ESP8266WebServer& server) {
     }
   }
 
+  if (link_email.length() && link_password.length()) {
+    if (link_email    != _storage.link_email ||
+        link_password != _storage.link_password) {
+      _storage.link_email    = link_email;
+      _storage.link_password = link_password;
+      dirty = true;
+      to_online(micros());
+    }
+  }
+  
   if (report_url.length()) {
     if (report_url != _storage.report_url) {
       _storage.report_url = report_url;
@@ -67,27 +80,6 @@ void save_settings(ESP8266WebServer& server) {
   server.send(200);
 }
 
-void link_account(ESP8266WebServer& server, String& email, String& password) {
-  _l("/link");
-
-  email = "";
-  password = "";
-
-  for (int i = 0; i < server.args(); ++i) {
-    auto name = server.argName(i);
-    auto val  = server.arg(i);
-
-    _l(name);
-    _l(val);
-
-    if (name == "email")    { email = val; }
-    if (name == "password") { password = val; }
-  }
-
-  server.send(200);
-  to_online(micros());
-}
-
 void init_webserver(ESP8266WebServer& server) {
   _l("init_webserver");
 
@@ -105,11 +97,6 @@ void init_webserver(ESP8266WebServer& server) {
   server.on("/settings", HTTP_POST, [&server]() {
     _latest_user_action = micros();
     save_settings(server);
-  });
-
-  server.on("/link", HTTP_POST, [&server]() {
-    _latest_user_action = micros();
-    link_account(server, _storage.link_email, _storage.link_password);
   });
 
   server.on("/logs", [&server]() {
@@ -165,13 +152,9 @@ String render_root() {
 
   html += "<html><head><title>kosi</title></head><body>";
   
-  // Settings Form
   html += "<h1>Settings</h1>";
 
   html += "<form method=\"post\" action=\"/settings\">";
-
-  html += "<fieldset><legend>Internal SSID</legend><input type=\"text\" name=\"ssid-internal\" value=\"";
-  html += String(_storage.ssid_internal).substring(AP_PREPEND.length()) + "\"/></fieldset>";
 
   html += "<fieldset><legend>External SSID</legend>";
   html += render_ssids(_found_networks, _num_found_networks, _storage.ssid_external);
@@ -180,21 +163,18 @@ String render_root() {
   html += "<fieldset><legend>External Password</legend><input type=\"password\" name=\"password-external\" value=\"";
   html += String(_storage.password_external) + "\"/></fieldset>";
 
+  html += "<fieldset><legend>Account Email</legend><input type=\"email\" name=\"email\"/></fieldset>";
+  
+  html += "<fieldset><legend>Account Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
+
+  html += "<fieldset><legend>Internal SSID</legend><input type=\"text\" name=\"ssid-internal\" value=\"";
+  html += String(_storage.ssid_internal).substring(AP_PREPEND.length()) + "\"/></fieldset>";
+
   html += "<fieldset><legend>Report URL</legend><input type=\"url\" name=\"report-url\" value=\"";
   html += String(_storage.report_url) + "\"/></fieldset>";
 
   html += "<fieldset><legend>Set Point</legend><input type=\"number\" value=\"";
   html += String(_storage.setpoint) + "\" step=\"0.1\" min=\"0.0\" max=\"25.0\" name=\"setpoint\"/></fieldset>";
-
-  html += "<input type=\"submit\"/></form>";
-
-  // Link Form
-  html += "<h1>Link Account</h1>";
-
-  html += "<form method=\"post\" action=\"/link\">";
-
-  html += "<fieldset><legend>Email</legend><input type=\"email\" name=\"email\"/></fieldset>";
-  html += "<fieldset><legend>Password</legend><input type=\"password\" name=\"password\"/></fieldset>";
 
   html += "<input type=\"submit\"/></form>";
 

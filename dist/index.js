@@ -140,8 +140,6 @@ var linkUserDevice = function (userId, deviceId) {
 // Device Key, Device Secret
 // Email, Password
 // If they're all correct, we will create a user_device token and return it
-// TODO: 400 on bad key/secret
-// TODO: 401 on bad email/password
 app.post('/link', function (req, res) {
     return __awaiter(this, void 0, void 0, function () {
         var device, user, token;
@@ -161,11 +159,16 @@ app.post('/link', function (req, res) {
                 case 2:
                     user = _a.sent();
                     console.log(user);
+                    if (!(user && device)) return [3 /*break*/, 4];
                     return [4 /*yield*/, linkUserDevice(user.id, device.id)];
                 case 3:
                     token = _a.sent();
                     res.send({ "token": token });
-                    return [2 /*return*/];
+                    return [3 /*break*/, 5];
+                case 4:
+                    res.status(400).end();
+                    _a.label = 5;
+                case 5: return [2 /*return*/];
             }
         });
     });
